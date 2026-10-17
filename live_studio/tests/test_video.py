@@ -336,6 +336,93 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
                 receiver.kill()
                 await receiver.wait()
 
+    async def test_layout_changes_render_without_restarting_video_or_music(self):
+        await self.engine.configure(
+            {
+                "title": "OVERLAY",
+                "overlay_layout": {
+                    "band": {"visible": False},
+                    "date": {"visible": False},
+                    "clock": {"visible": False},
+                    "source": {"visible": False},
+                    "title": {
+                        "anchor": "top_left",
+                        "x": 20,
+                        "y": 20,
+                        "font_size": 60,
+                        "shadow": False,
+                    },
+                },
+            }
+        )
+        await self.engine.start("preview", 12)
+        await self.until(lambda: self.engine.last_audio >= 2)
+        identity, pid = self.engine.output_id, self.engine.process.pid
+        before = self.engine.last_audio
+        await self.engine.configure(
+            {
+                "overlay_layout": {
+                    "title": {"x": 300, "y": 100, "font_size": 90, "color": "#00FF00"},
+                    "band": {"position": "top", "visible": True, "height": 120},
+                }
+            }
+        )
+        await self.until(lambda: not self.engine.layout_pending)
+        response = await self.client.get(
+            "/api/overlay/snapshot.jpg", headers={"Authorization": "Bearer " + "x" * 40}
+        )
+        self.assertEqual(response.status, 200)
+        self.assertTrue((await response.read()).startswith(b"\xff\xd8"))
+        await self.until(lambda: self.engine.last_audio >= 6)
+        self.assertEqual(
+            (identity, pid), (self.engine.output_id, self.engine.process.pid)
+        )
+        self.assertGreater(self.engine.last_audio, before)
+        await self.engine.configure({"overlay_layout": {"title": {"visible": False}}})
+        await self.until(lambda: not self.engine.wanted)
+        self.assertEqual(self.engine.state, "preview_completed")
+        self.assertEqual(self.engine.output_restarts, 1)
+        clip = self.root / "out/preview.mp4"
+
+        async def pixels(at):
+            return await asyncio.to_thread(
+                subprocess.check_output,
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-ss",
+                    str(at),
+                    "-i",
+                    str(clip),
+                    "-frames:v",
+                    "1",
+                    "-f",
+                    "rawvideo",
+                    "-pix_fmt",
+                    "rgb24",
+                    "-",
+                ],
+            )
+
+        old, moved, hidden = await pixels(1), await pixels(5), await pixels(9)
+
+        def count(image, color, left, top, right, bottom):
+            result = 0
+            for y in range(top, bottom):
+                for x in range(left, right):
+                    r, g, b = image[(y * 640 + x) * 3 : (y * 640 + x) * 3 + 3]
+                    result += (
+                        (r > 180 and g > 180 and b > 180)
+                        if color == "white"
+                        else (r < 80 and g > 120 and b < 80)
+                    )
+            return result
+
+        self.assertGreater(count(old, "white", 0, 0, 150, 40), 100)
+        self.assertGreater(count(moved, "green", 90, 25, 300, 85), 100)
+        self.assertLess(count(hidden, "green", 90, 25, 300, 85), 10)
+
     async def test_two_simultaneous_encoders_and_independent_stop(self):
         manager = self.app["manager"]
         second = await manager.create(

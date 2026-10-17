@@ -1,3 +1,13 @@
+## 0.5.0
+
+- Configure each overlay element independently: placement, visibility, size,
+  scrolling mode/speed/direction, color, background and shadow.
+- Move the information bar to the top or bottom; separate date and time formats.
+- Apply layout edits over a private Unix command socket without restarting the
+  encoder, RTMP connection or music. No TCP command listener is opened.
+- Add fresh composed JPEG previews and safe, partial per-live layout updates.
+- Retain legacy overlay flags and unchanged frame-count video timing.
+
 ## 0.4.1
 
 - Fix camera motion collapsing to about1FPS after a slow RTMP handshake, even

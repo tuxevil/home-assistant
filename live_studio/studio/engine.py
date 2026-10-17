@@ -5,11 +5,12 @@ import json
 import os
 import time
 import uuid
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import __version__
+from . import __version__, layout
 from .config import atomic_json, validate
 from .director import Director
 from .hardware import select as select_hardware
@@ -18,6 +19,7 @@ from .video import VideoHub, snapshot
 
 OVERLAYS = {
     "title",
+    "overlay_layout",
     "timezone",
     "show_clock",
     "ticker",
@@ -83,6 +85,10 @@ class Engine:
         self.output_restarts = 0
         self.reload_music = False
         self.snapshot_lock = asyncio.Lock()
+        self.layout_rendered = None
+        self.layout_pending = False
+        self.layout_revision = 0
+        self.layout_applied_revision = 0
         self.acceleration = {
             "encoder": "cpu",
             "decoder": "cpu",
@@ -154,6 +160,7 @@ class Engine:
                 else None
             ),
             destination_configured=bool(self.settings["destination_url"]),
+            overlay_pending=self.layout_pending,
             fps=self.metrics.get("fps"),
             speed=self.metrics.get("speed"),
             frames=self.metrics.get("frame"),
@@ -183,6 +190,9 @@ class Engine:
         )
         sources_changed = self.settings["sources"] != settings["sources"]
         policy_changed = any(self.settings[k] != settings[k] for k in POLICY)
+        if self.settings["overlay_layout"] != settings["overlay_layout"]:
+            self.layout_revision += 1
+            self.layout_pending = bool(self.wanted)
         self.settings = settings
         self.director.settings = settings
         if sources_changed:
@@ -214,6 +224,24 @@ class Engine:
         async with self.snapshot_lock:
             return await snapshot(source, self.settings, self.hub)
 
+    async def overlay_snapshot(self):
+        source = next(
+            (s for s in self.settings["sources"] if s["id"] == self.director.active),
+            None,
+        )
+        if source is None:
+            raise ValueError("No camera selected")
+        async with self.snapshot_lock:
+            graph = (
+                f"setpts=PTS+{max(0, time.monotonic()-self.anchor):.3f}/TB,"
+                + ",".join(
+                    layout.filters(
+                        self.settings, self.overlay, self.font, runtime=False
+                    )
+                )
+            )
+            return await snapshot(source, self.settings, self.hub, graph=graph)
+
     async def texts(self):
         while True:
             now = time.monotonic()
@@ -226,9 +254,14 @@ class Engine:
             values = dict(
                 title=s["title"],
                 clock=(
-                    datetime.now(ZoneInfo(s["timezone"])).strftime("%Y-%m-%d  %H:%M:%S")
+                    datetime.now(ZoneInfo(s["timezone"])).strftime(
+                        layout.FORMATS["clock"][s["overlay_layout"]["clock"]["format"]]
+                    )
                     if s["show_clock"]
                     else ""
+                ),
+                date=datetime.now(ZoneInfo(s["timezone"])).strftime(
+                    layout.FORMATS["date"][s["overlay_layout"]["date"]["format"]]
                 ),
                 ticker=s["ticker"],
                 cta=cta,
@@ -253,13 +286,29 @@ class Engine:
                 ),
             )
             for name, text in values.items():
+                if not s["overlay_layout"][name]["visible"]:
+                    text = ""
                 path = self.overlay / (name + ".txt")
                 # Atomic replacement prevents FFmpeg from reading partial UTF-8.
-                if name == "clock" or not path.exists() or path.read_text() != text:
+                if not path.exists() or path.read_text() != text:
                     temp = path.with_suffix(".tmp")
                     temp.write_text(text)
                     temp.replace(path)
-            await asyncio.sleep(1)
+            if self.layout_pending and self.process and self.process.returncode is None:
+                revision = self.layout_revision
+                try:
+                    await layout.update(
+                        s, self.overlay, self.font, self.layout_rendered
+                    )
+                except (OSError, TimeoutError, ValueError, layout.zmq.ZMQError):
+                    # The private command socket may not be ready at startup.
+                    # Retain the desired settings and retry without reconnecting.
+                    pass
+                else:
+                    self.layout_rendered = deepcopy(s)
+                    self.layout_applied_revision = revision
+                    self.layout_pending = revision != self.layout_revision
+            await asyncio.sleep(0.25)
 
     def graph(self):
         s = self.settings
@@ -271,26 +320,10 @@ class Engine:
             f"fps={s['fps']}",
             "format=yuv420p",
         ]
-        size = max(18, round(s["height"] / 38))
-        bottom = max(72, round(s["height"] / 10))
-        filters.append(
-            f"drawbox=x=0:y=ih-{bottom}:w=iw:h={bottom}:color=black@0.45:t=fill"
-        )
-        positions = {
-            "source": ("24", "h-th-132"),
-            "title": ("24", "24"),
-            "clock": ("w-tw-24", "24"),
-            "sensor": (
-                "if(lte(text_w\\,w-48)\\,24\\,24-mod(t*35\\,text_w+w))",
-                f"h-{bottom-12}",
-            ),
-            "ticker": ("w-mod(t*65\\,w+text_w)", "h-th-16"),
-            "cta": ("w-tw-24", f"h-{bottom}-th-24"),
-        }
-        for name, (x, y) in positions.items():
-            filters.append(
-                f"drawtext=fontfile={self.font}:textfile={self.overlay}/{name}.txt:reload=1:expansion=none:fontsize={size}:fontcolor=white:shadowcolor=black:shadowx=1:shadowy=1:x={x}:y={y}"
-            )
+        self.layout_rendered = deepcopy(s)
+        self.layout_pending = False
+        self.layout_applied_revision = self.layout_revision
+        filters.extend(layout.filters(s, self.overlay, self.font))
         return ",".join(filters)
 
     def command(self, listing):
@@ -454,6 +487,7 @@ class Engine:
                 # and start a second writer over the same playlist/cache files.
                 await self.worker
             self.state = "stopped"
+            self.layout_pending = False
 
     async def progress(self):
         last_frame = -1

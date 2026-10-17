@@ -201,7 +201,7 @@ en una red y clientes de confianza. No se añade telemetría ni una cuenta cloud
 
 ## Optional external engine and GPU
 
-Use the same companion API on Linux (native systemd or a container) instead of the HAOS app when desired. Example service: `deploy/systemd/live-studio.service` in this repository. Install Python/aiohttp, FFmpeg, fonts and the drivers appropriate to your hardware. No Proxmox dependency.
+Use the same companion API on Linux (native systemd or a container) instead of the HAOS app when desired. Example service: `deploy/systemd/live-studio.service` in this repository. Install Python, the packages in `requirements.txt` (aiohttp and pyzmq), FFmpeg with the `zmq` and `drawtext` filters, fonts and the drivers appropriate to your hardware. No Proxmox dependency.
 
 `STUDIO_DATA` contains private options.json (API token), profile settings/identities/destinations/bookmarks. `STUDIO_MEDIA` stores previews. `STUDIO_MUSIC_ROOTS` is an administrator-controlled colon-separated directory allowlist (default `/share:/media`); configure it for external music storage. Copy or mount music separately and preserve bookmark/cache paths on relocation. No installation-specific paths, addresses or tokens are required in public source.
 
@@ -225,3 +225,30 @@ The paced pipe uses frame-count timestamps. A slow ingest handshake may delay
 startup, but cannot recursively create duplicate video frames from each input
 read delay. A sustained encoder/network bottleneck still requires resolving
 that bottleneck; changing timestamp policy does not add processing capacity.
+
+### Live overlay layout
+
+Engine0.5.0 adds `overlay_layout`. Each of `title`, `source`, `date`, `clock`,
+`sensor`, `ticker` and `cta` accepts partial updates for `visible`, `anchor`,
+`x`, `y`, `font_size`, `color`, `background_color`, `background_opacity`,
+`shadow`, `scroll`, `speed` and `direction`. Anchors are `auto` or a combination
+of `top`/`middle`/`bottom` and `left`/`center`/`right`. Offsets and font sizes
+use a1080p reference and scale with output height. Colors use `#RRGGBB`.
+Scrolling can be `off`, `overflow` or `always`; speed0 keeps text stationary.
+
+`band` accepts `visible`, `position` (`top`/`bottom`), `height`, `color` and
+`opacity`. Automatic positions keep information/ticker inside the bar and
+place other labels around it; custom anchors let you position each separately.
+Date formats are `iso`, `day_first`, `month_first`; time formats are
+`24h_seconds`, `24h`, `12h`. The existing `timezone` controls both.
+
+Layout commands use a private Unix socket in the overlay directory, not a TCP
+port. Edits preserve the encoder, RTMP session and audio bookmark. Status
+`overlay_pending` remains true until commands are accepted. Partial updates
+merge without resetting other elements or lives. Existing `show_clock` and
+`show_camera_name` flags remain compatible; date visibility is independent.
+
+Authenticated `GET /api/lives/{live_id}/overlay/snapshot.jpg` returns a fresh
+JPEG with the desired layout for review; it does not replace the live output.
+The integration exposes this as an overlay-preview camera and bundles a
+Lovelace editor card.

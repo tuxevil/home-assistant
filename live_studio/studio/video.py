@@ -336,7 +336,7 @@ class VideoHub:
         }
 
 
-async def snapshot(source, settings, hub=None):
+async def snapshot(source, settings, hub=None, graph=""):
     """Return a fresh JPEG or fail; never serve a cached last frame as live."""
     current = hub.sources.get(source["id"]) if hub else None
     if hub and (not current or not current.healthy):
@@ -385,7 +385,7 @@ async def snapshot(source, settings, hub=None):
         "-frames:v",
         "1",
         "-vf",
-        "scale=960:-2",
+        (graph + "," if graph else "") + "scale=960:-2",
         "-filter_threads",
         "1",
         "-threads",

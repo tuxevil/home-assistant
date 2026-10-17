@@ -7,6 +7,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .layout import validate_layout
+
 DEFAULTS = dict(
     rtsp_url="",
     sources=[],
@@ -36,6 +38,7 @@ DEFAULTS = dict(
     cta="Enjoy the view · Like and subscribe",
     cta_period=600,
     cta_duration=12,
+    overlay_layout=None,
 )
 TEXT_LIMITS = {"title": 100, "ticker": 1200, "cta": 200, "no_signal_text": 150}
 NUMBERS = {
@@ -121,7 +124,12 @@ def validate(values, base=None):
     if not isinstance(values, dict) or values.keys() - DEFAULTS.keys():
         raise ValueError("Unknown configuration fields")
     result = {**DEFAULTS, **(base or {})}
+    result["overlay_layout"] = validate_layout(
+        values.get("overlay_layout", {}), (base or {}).get("overlay_layout")
+    )
     for key, value in values.items():
+        if key == "overlay_layout":
+            continue
         if key == "sources":
             value = validate_sources(value)
         elif key in ("video_encoder", "video_decoder"):
@@ -205,6 +213,18 @@ def validate(values, base=None):
         raise ValueError("Video dimensions must be even")
     if result["cta_duration"] >= result["cta_period"]:
         raise ValueError("CTA duration must be less than period")
+    if "show_clock" in values or (
+        not (base or {}).get("overlay_layout") and "overlay_layout" not in values
+    ):
+        result["overlay_layout"]["clock"]["visible"] = result["show_clock"]
+        if not (base or {}).get("overlay_layout") and "overlay_layout" not in values:
+            result["overlay_layout"]["date"]["visible"] = result["show_clock"]
+    if "show_camera_name" in values or (
+        not (base or {}).get("overlay_layout") and "overlay_layout" not in values
+    ):
+        result["overlay_layout"]["source"]["visible"] = result["show_camera_name"]
+    result["show_clock"] = result["overlay_layout"]["clock"]["visible"]
+    result["show_camera_name"] = result["overlay_layout"]["source"]["visible"]
     return result
 
 

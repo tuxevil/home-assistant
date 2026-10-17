@@ -104,6 +104,15 @@ async def create_app(data=None, media=None, options=None):
         await engine.stop()
         return web.json_response(manager.status(live_id(request)))
 
+    async def overlay_image(request):
+        try:
+            data = await current(request).overlay_snapshot()
+        except (ValueError, OSError, TimeoutError):
+            raise web.HTTPServiceUnavailable(text="No fresh overlay image") from None
+        return web.Response(
+            body=data, content_type="image/jpeg", headers={"Cache-Control": "no-store"}
+        )
+
     async def preview(request):
         engine = current(request)
         path = engine.media / "preview.mp4"
@@ -191,6 +200,7 @@ async def create_app(data=None, media=None, options=None):
         app.router.add_post(prefix + "/start", start)
         app.router.add_post(prefix + "/stop", stop)
         app.router.add_get(prefix + "/preview.mp4", preview)
+        app.router.add_get(prefix + "/overlay/snapshot.jpg", overlay_image)
         app.router.add_post(prefix + "/selection", select)
         app.router.add_post(prefix + "/comparison", comparison)
         app.router.add_post(prefix + "/destination", destination)
