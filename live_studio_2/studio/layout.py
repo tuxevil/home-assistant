@@ -225,6 +225,6 @@ async def update(settings, overlay, font, previous=None):
             await socket.send_string(command)
             reply = await asyncio.wait_for(socket.recv_string(), 2)
             if not reply.startswith("0 "):
-                raise ValueError("Overlay command rejected")
+                raise ValueError("Overlay command rejected: " + " ".join(command.split()[:2]) + " (" + reply.split()[0] + ")")
     finally:
         socket.close()

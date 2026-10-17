@@ -36,3 +36,30 @@ class LayoutValidationTests(unittest.TestCase):
         ]:
             with self.subTest(patch=patch), self.assertRaises(ValueError):
                 validate({"overlay_layout": patch})
+
+
+class RuntimeCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ffmpeg_accepts_runtime_overlay_commands(self):
+        import asyncio
+        import tempfile
+        from pathlib import Path
+        from studio.engine import Engine
+        from studio import layout
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            engine = Engine(root, root, {})
+            for name in layout.ELEMENTS:
+                (engine.overlay / (name + ".txt")).write_text("TEST")
+            process = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-v", "error", "-re", "-f", "lavfi", "-i",
+                "color=s=640x360:r=30", "-vf", engine.graph(),
+                "-f", "null", "-", stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                await asyncio.sleep(0.5)
+                await layout.update(engine.settings, engine.overlay, engine.font)
+            finally:
+                process.terminate()
+                _, errors = await process.communicate()
+                self.assertEqual(errors, b"")
