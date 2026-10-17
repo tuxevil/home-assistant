@@ -1,11 +1,53 @@
 """Independent decoders and a paced video feed for one persistent encoder."""
 
 import asyncio
+import re
 import time
+from collections import deque
+
+
+class FrameBuffer:
+    """Play camera PTS against a monotonic clock, bounding latency and memory."""
+
+    def __init__(self, delay=0.25, capacity=32):
+        self.delay, self.capacity = delay, capacity
+        self.frames = deque()
+        self.anchor = None
+        self.last_pts = None
+        self.displayed = None
+        self.resets = 0
+
+    def push(self, frame, pts, arrived):
+        if (
+            self.anchor is None
+            or (
+                self.last_pts is not None
+                and (pts < self.last_pts - 0.1 or pts - self.last_pts > 10)
+            )
+            or abs(arrived - (self.anchor + pts - self.delay)) > 2
+        ):
+            self.anchor = arrived - pts + self.delay
+            self.frames.clear()
+            self.resets += int(self.last_pts is not None)
+        self.last_pts = pts
+        self.frames.append((self.anchor + pts, frame))
+        while len(self.frames) > self.capacity:
+            self.frames.popleft()
+
+    def at(self, now):
+        while self.frames and self.frames[0][0] <= now:
+            self.displayed = self.frames.popleft()[1]
+        return self.displayed or (self.frames[0][1] if self.frames else None)
 
 
 class Source:
-    def __init__(self, source, width, height, fps):
+    def __init__(self, source, width, height, fps, acceleration=None, buffer_ms=250):
+        self.acceleration = acceleration or {"decoder": "cpu", "device": ""}
+        self.decoder = self.acceleration["decoder"]
+        self.decoder_fallback = source.get("_decoder_auto", False)
+        self.buffer_ms = buffer_ms
+        self.buffer = FrameBuffer(buffer_ms / 1000, max(8, fps * 2))
+        self.timestamps = asyncio.Queue(maxsize=max(16, fps * 2))
         self.id = source["id"]
         self.url = source["rtsp_url"]
         self.width = width
@@ -27,13 +69,13 @@ class Source:
         return self.received is not None and time.monotonic() - self.received < 5
 
     def command(self):
-        graph = f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
-        return [
+        graph = f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,setpts=PTS-STARTPTS,showinfo"
+        command = [
             "ffmpeg",
             "-nostdin",
             "-hide_banner",
             "-v",
-            "error",
+            "info",
             "-rtsp_transport",
             "tcp",
             "-timeout",
@@ -67,14 +109,39 @@ class Source:
             "pipe:1",
         ]
 
+        if self.decoder == "vaapi":
+            i = command.index("-i")
+            command[i:i] = [
+                "-hwaccel",
+                "vaapi",
+                "-hwaccel_device",
+                self.acceleration["device"],
+                "-hwaccel_output_format",
+                "vaapi",
+            ]
+            i = command.index("-vf") + 1
+            command[i] = "hwdownload,format=nv12," + command[i]
+        return command
+
     async def read_errors(self, process):
         # Classify locally: raw FFmpeg lines may contain camera credentials.
         while line := await process.stderr.readline():
             lower = line.lower()
-            if any(marker in lower for marker in (
-                b"could not find ref", b"error constructing", b"corrupt",
-                b"invalid data", b"pps id out of range", b"error while decoding",
-            )):
+            if b"showinfo" in lower:
+                match = re.search(rb"\bn:\s*\d+.*?pts_time:([0-9.eE+-]+)", line)
+                if match:
+                    await self.timestamps.put(float(match[1]))
+            if any(
+                marker in lower
+                for marker in (
+                    b"could not find ref",
+                    b"error constructing",
+                    b"corrupt",
+                    b"invalid data",
+                    b"pps id out of range",
+                    b"error while decoding",
+                )
+            ):
                 self.decode_errors += 1
                 self.decode_error_at = time.monotonic()
 
@@ -82,10 +149,15 @@ class Source:
         while not self.stopping:
             self.frame = None
             self.received = None
+            self.buffer = FrameBuffer(self.buffer_ms / 1000, max(8, self.fps * 2))
+            self.timestamps = asyncio.Queue(maxsize=max(16, self.fps * 2))
+            connection_frames = 0
             errors_task = None
             try:
+                command = self.command()
+                timestamped = any("showinfo" in x for x in command)
                 self.process = await asyncio.create_subprocess_exec(
-                    *self.command(),
+                    *command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     limit=self.size * 2,
@@ -96,8 +168,17 @@ class Source:
                         self.process.stdout.readexactly(self.size),
                         timeout=15 if self.received is None else 8,
                     )
+                    arrived = time.monotonic()
+                    pts = (
+                        await asyncio.wait_for(self.timestamps.get(), 3)
+                        if timestamped
+                        else arrived
+                    )
+                    self.buffer.push(frame, pts, arrived)
+                    self.buffer.at(arrived)
+                    connection_frames += 1
                     self.frame = frame
-                    self.received = time.monotonic()
+                    self.received = arrived
                     self.frames += 1
             except (OSError, TimeoutError, asyncio.IncompleteReadError):
                 pass
@@ -119,6 +200,12 @@ class Source:
                 self.frame = None
                 self.received = None
             if not self.stopping:
+                if (
+                    not connection_frames
+                    and self.decoder == "vaapi"
+                    and self.decoder_fallback
+                ):
+                    self.decoder = "cpu"
                 self.reconnects += 1
                 await asyncio.sleep(2)
 
@@ -130,11 +217,18 @@ class Source:
 
 
 class VideoHub:
-    def __init__(self, settings, director):
+    def __init__(self, settings, director, acceleration=None):
         self.settings = settings
         self.director = director
         self.sources = {
-            s["id"]: Source(s, settings["width"], settings["height"], settings["fps"])
+            s["id"]: Source(
+                dict(s, _decoder_auto=settings.get("video_decoder") == "auto"),
+                settings["width"],
+                settings["height"],
+                settings["fps"],
+                acceleration,
+                settings.get("source_buffer_ms", 250),
+            )
             for s in settings["sources"]
         }
         self.blank = bytes([16]) * (settings["width"] * settings["height"]) + bytes(
@@ -156,7 +250,11 @@ class VideoHub:
 
     def current_frame(self):
         source = self.sources.get(self.director.active)
-        return source.frame if source and source.healthy else self.blank
+        return (
+            (source.buffer.at(time.monotonic()) or source.frame)
+            if source and source.healthy
+            else self.blank
+        )
 
     async def feed(self, process):
         period = 1 / self.settings["fps"]
@@ -203,8 +301,15 @@ class VideoHub:
                     else round(time.monotonic() - s.received, 2)
                 ),
                 reconnects=s.reconnects,
+                decoder=s.decoder,
+                buffered_frames=len(s.buffer.frames),
+                timestamp_resets=s.buffer.resets,
                 decode_errors=s.decode_errors,
-                last_decode_error_age=(None if s.decode_error_at is None else round(time.monotonic() - s.decode_error_at, 2)),
+                last_decode_error_age=(
+                    None
+                    if s.decode_error_at is None
+                    else round(time.monotonic() - s.decode_error_at, 2)
+                ),
             )
             for key, s in self.sources.items()
         }

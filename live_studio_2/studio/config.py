@@ -1,6 +1,7 @@
 """Validated, installation-independent engine configuration."""
 
 import json
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -22,6 +23,10 @@ DEFAULTS = dict(
     width=1920,
     height=1080,
     fps=15,
+    video_encoder="cpu",
+    video_decoder="cpu",
+    vaapi_device="",
+    source_buffer_ms=250,
     bitrate_kbps=3000,
     threads=2,
     title="Live Studio",
@@ -42,6 +47,7 @@ NUMBERS = {
     "width": (640, 3840),
     "height": (360, 2160),
     "fps": (5, 30),
+    "source_buffer_ms": (0, 2000),
     "bitrate_kbps": (500, 15000),
     "threads": (1, 8),
     "cta_period": (60, 7200),
@@ -118,6 +124,17 @@ def validate(values, base=None):
     for key, value in values.items():
         if key == "sources":
             value = validate_sources(value)
+        elif key in ("video_encoder", "video_decoder"):
+            if value not in ("cpu", "vaapi", "auto"):
+                raise ValueError("Invalid video acceleration")
+        elif key == "vaapi_device":
+            if not isinstance(value, str) or (
+                value
+                and not re.fullmatch(
+                    r"/dev/dri/(renderD[0-9]+|by-path/[A-Za-z0-9:._-]+-render)", value
+                )
+            ):
+                raise ValueError("Invalid render device")
         elif key == "preferred_camera":
             if not isinstance(value, str):
                 raise ValueError("Invalid preferred camera")
@@ -152,9 +169,15 @@ def validate(values, base=None):
         elif key == "music_directory":
             if not isinstance(value, str) or not any(
                 Path(value).resolve().is_relative_to(root)
-                for root in (Path("/share"), Path("/media"))
+                for root in [
+                    Path(x).resolve()
+                    for x in os.environ.get(
+                        "STUDIO_MUSIC_ROOTS", "/share:/media"
+                    ).split(os.pathsep)
+                    if x and Path(x).is_absolute()
+                ]
             ):
-                raise ValueError("Music must be under /share or /media")
+                raise ValueError("Music must be under an allowed music root")
         result[key] = value
     # Migration from the original one-camera configuration is lossless.
     if "rtsp_url" in values and "sources" not in values:

@@ -1,0 +1,23 @@
+[Unit]
+Description=Live Studio streaming engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=live-studio
+Group=live-studio
+EnvironmentFile=-/etc/live-studio.env
+Environment=STUDIO_DATA=/var/lib/live-studio
+Environment=STUDIO_MEDIA=/var/lib/live-studio/media
+Environment=STUDIO_MUSIC_ROOTS=/srv/live-studio/music
+WorkingDirectory=/opt/live-studio
+ExecStart=/opt/live-studio/venv/bin/python -m studio.server
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

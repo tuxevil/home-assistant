@@ -198,3 +198,15 @@ La API autenticada añade`GET /api/server`, `GET/POST /api/lives`,
 `cameras/<source>/snapshot.jpg`. Las rutas originales siguen siendo alias del
 live original. El token del motor permite administrar todos sus lives; usarlo solo
 en una red y clientes de confianza. No se añade telemetría ni una cuenta cloud.
+
+## Optional external engine and GPU
+
+Use the same companion API on Linux (native systemd or a container) instead of the HAOS app when desired. Example service: `deploy/systemd/live-studio.service` in this repository. Install Python/aiohttp, FFmpeg, fonts and the drivers appropriate to your hardware. No Proxmox dependency.
+
+`STUDIO_DATA` contains private options.json (API token), profile settings/identities/destinations/bookmarks. `STUDIO_MEDIA` stores previews. `STUDIO_MUSIC_ROOTS` is an administrator-controlled colon-separated directory allowlist (default `/share:/media`); configure it for external music storage. Copy or mount music separately and preserve bookmark/cache paths on relocation. No installation-specific paths, addresses or tokens are required in public source.
+
+Per-live `video_encoder` and `video_decoder`: `cpu` (default), `vaapi`, `auto`. Optional `vaapi_device` selects an accessible render node; empty discovers render nodes. Explicit VAAPI fails visibly if initialization is unavailable. Automatic mode exposes its actual backend/fallback in status; a source may fall back to CPU after failed hardware decoding. VAAPI can work with different vendors depending on driver support. Software overlays use CPU; hardware frames are transferred as needed, not a zero-copy pipeline.
+
+`source_buffer_ms` defaults to250 (0–2000). Source presentation timestamps, rather than packet arrival, pace camera pictures through a bounded buffer. Clock discontinuities reset that buffer; overdue frames are skipped instead of accelerated playback. Increasing buffering adds latency, and cannot repair a long source outage or invent intermediate camera frames.
+
+For relocation, test privately with resume intents disabled before changing HA entries. Preserve identities and move private destinations only when the old sender is stopped; disable old app autostart/watchdog after cutover. Internal HAOS add-on DNS names and media paths require reachable equivalents externally.

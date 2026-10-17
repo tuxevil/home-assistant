@@ -1,3 +1,9 @@
+## 0.4.0
+
+- Optional CPU/VAAPI/automatic processing, independent of HAOS or an external Linux host.
+- Bounded presentation-timestamp buffering for uneven camera packet arrival.
+- Portable music roots and font detection; external systemd example.
+
 ## 0.3.1
 
 - Reject damaged source packets and decoding errors before overlay encoding.

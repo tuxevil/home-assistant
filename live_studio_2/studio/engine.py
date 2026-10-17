@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from datetime import datetime
@@ -11,6 +12,7 @@ from zoneinfo import ZoneInfo
 from . import __version__
 from .config import atomic_json, validate
 from .director import Director
+from .hardware import select as select_hardware
 from .music import Music
 from .video import VideoHub, snapshot
 
@@ -81,7 +83,24 @@ class Engine:
         self.output_restarts = 0
         self.reload_music = False
         self.snapshot_lock = asyncio.Lock()
-        self.font = Path("/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf")
+        self.acceleration = {
+            "encoder": "cpu",
+            "decoder": "cpu",
+            "device": "",
+            "fallback_reason": None,
+        }
+        self.font = next(
+            (
+                Path(path)
+                for path in [
+                    os.environ.get("STUDIO_FONT", ""),
+                    "/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                ]
+                if path and Path(path).is_file()
+            ),
+            Path("/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf"),
+        )
 
     def status(self):
         return dict(
@@ -89,6 +108,7 @@ class Engine:
             version=__version__,
             state=self.state,
             mode=self.mode,
+            acceleration=dict(self.acceleration),
             source_configured=bool(self.settings["sources"]),
             sources_revision=self.sources_revision,
             selection=self.director.status_dict(),
@@ -296,6 +316,8 @@ class Engine:
             "-i",
             "pipe:0",
         ]
+        if self.acceleration["encoder"] == "vaapi":
+            cmd[1:1] = ["-vaapi_device", self.acceleration["device"]]
         if listing:
             cmd += [
                 "-re",
@@ -316,13 +338,29 @@ class Engine:
             "-map",
             "1:a:0",
             "-vf",
-            self.graph(),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-threads",
-            str(s["threads"]),
+            self.graph()
+            + (
+                ",format=nv12,hwupload"
+                if self.acceleration["encoder"] == "vaapi"
+                else ""
+            ),
+        ]
+        if self.acceleration["encoder"] == "vaapi":
+            cmd += ["-c:v", "h264_vaapi", "-profile:v", "high", "-bf", "0"]
+        else:
+            cmd += [
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-threads",
+                str(s["threads"]),
+                "-keyint_min",
+                str(s["fps"] * 2),
+                "-sc_threshold",
+                "0",
+            ]
+        cmd += [
             "-filter_threads",
             "1",
             "-b:v",
@@ -333,10 +371,6 @@ class Engine:
             str(2 * s["bitrate_kbps"]) + "k",
             "-g",
             str(s["fps"] * 2),
-            "-keyint_min",
-            str(s["fps"] * 2),
-            "-sc_threshold",
-            "0",
             "-c:a",
             "aac",
             "-b:a",
@@ -476,7 +510,16 @@ class Engine:
                 break
 
     async def run(self):
-        self.hub = VideoHub(self.settings, self.director)
+        try:
+            self.acceleration = await select_hardware(self.settings)
+        except ValueError:
+            self.error = (
+                "Requested acceleration is unavailable; verify render device access"
+            )
+            self.state = "error"
+            self.wanted = False
+            return
+        self.hub = VideoHub(self.settings, self.director, self.acceleration)
         try:
             await self.hub.start()
             while self.wanted:

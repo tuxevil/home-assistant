@@ -1,5 +1,5 @@
 name: Live Studio Engine
-version: "0.3.1"
+version: "0.4.0"
 slug: live_studio
 url: https://github.com/tuxevil/home-assistant/tree/main/live_studio
 description: Local RTSP streaming studio with music, text overlays and a Home Assistant control API
@@ -9,6 +9,7 @@ arch:
 startup: application
 boot: auto
 init: false
+video: true
 map:
   - type: share
     read_only: true
