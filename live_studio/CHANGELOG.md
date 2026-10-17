@@ -7,6 +7,7 @@
   encoder, RTMP connection or music. No TCP command listener is opened.
 - Add fresh composed JPEG previews and safe, partial per-live layout updates.
 - Retain legacy overlay flags and unchanged frame-count video timing.
+- Use Debian13/FFmpeg7 for consistent runtime overlay editing in the bundled app.
 
 ## 0.4.1
 

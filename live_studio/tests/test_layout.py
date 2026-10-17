@@ -65,6 +65,7 @@ class RuntimeCommandTests(unittest.IsolatedAsyncioTestCase):
                 }}, engine.settings)
                 await layout.update(changed, engine.overlay, engine.font, engine.settings)
             finally:
-                process.terminate()
+                if process.returncode is None:
+                    process.terminate()
                 _, errors = await process.communicate()
                 self.assertEqual(errors, b"")

@@ -1,6 +1,12 @@
-FROM alpine:3.23
-RUN apk add --no-cache ffmpeg python3 py3-aiohttp py3-pyzmq font-dejavu tzdata mesa-va-gallium libva-utils
-RUN if [ "$(apk --print-arch)" = "x86_64" ]; then apk add --no-cache intel-media-driver libva-intel-driver; fi
+# Keep the bundled engine on the same FFmpeg major version as the reference
+# Linux deployment: some FFmpeg8 builds crash on live drawtext resizing.
+FROM debian:trixie-slim
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ffmpeg python3 python3-aiohttp python3-zmq fonts-dejavu-core tzdata mesa-va-drivers vainfo \
+    && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        apt-get install -y --no-install-recommends intel-media-va-driver i965-va-driver; \
+       fi \
+    && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /data /media/live_studio
 WORKDIR /app
 COPY studio /app/studio

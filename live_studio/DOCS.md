@@ -252,3 +252,8 @@ Authenticated `GET /api/lives/{live_id}/overlay/snapshot.jpg` returns a fresh
 JPEG with the desired layout for review; it does not replace the live output.
 The integration exposes this as an overlay-preview camera and bundles a
 Lovelace editor card.
+
+The bundled app uses Debian13 and FFmpeg7, matching the reference external
+Linux deployment. FFmpeg8 packages that terminate during live `drawtext`
+resizing are not supported for this feature; changing to a newer major version
+requires passing the runtime rendering tests, not just detecting filter names.
