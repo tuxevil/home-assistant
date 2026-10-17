@@ -5,6 +5,7 @@ import asyncio
 import json
 import pathlib
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
@@ -125,6 +126,8 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
         identity = self.engine.output_id
         pid = self.engine.process.pid
         before = self.engine.last_audio
+        image = await self.engine.camera_snapshot("wide")
+        self.assertTrue(image.startswith(b"\xff\xd8"))
         await self.engine.select("manual", "zoom")
         await self.until(lambda: self.engine.last_audio >= 5)
         self.assertEqual(
@@ -214,16 +217,20 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
         await self.engine.stop()
         self.assertEqual(self.engine.state, "stopped")
 
-    async def test_delayed_feed_keeps_wall_clock_timeline(self):
+    async def test_transient_feed_delay_recovers_with_aligned_audio(self):
         await self.engine.select("manual", "wide")
         await self.engine.start("preview", 6)
         await self.until(lambda: self.engine.process is not None)
         writer = self.engine.process.stdin
         original = writer.drain
+        delayed = False
 
         async def delayed_drain():
+            nonlocal delayed
             await original()
-            await asyncio.sleep(0.18)
+            if not delayed:
+                delayed = True
+                await asyncio.sleep(1.5)
 
         writer.drain = delayed_drain
         started = time.monotonic()
@@ -248,6 +255,84 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
         )
         durations = [float(s["duration"]) for s in probe["streams"]]
         self.assertLess(max(durations) - min(durations), 0.3)
+
+    async def test_slow_rtmp_handshake_does_not_lock_camera_to_one_fps(self):
+        # A real RTMP receiver behind a delayed TCP proxy reproduces the
+        # startup stall. Output FPS alone misses the regression: fps/drawtext
+        # can produce smooth text over repeated camera frames indefinitely.
+        with socket.socket() as reserved:
+            reserved.bind(("127.0.0.1", 0))
+            port = reserved.getsockname()[1]
+        receiver = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-nostdin",
+            "-v",
+            "error",
+            "-listen",
+            "1",
+            "-i",
+            f"rtmp://127.0.0.1:{port}/live/test",
+            "-c",
+            "copy",
+            "-y",
+            str(self.root / "received.flv"),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        connections = set()
+
+        async def proxy(reader, writer):
+            task = asyncio.current_task()
+            connections.add(task)
+            upstream = None
+            try:
+                await asyncio.sleep(2)
+                remote, upstream = await asyncio.open_connection("127.0.0.1", port)
+
+                async def relay(source, destination):
+                    while data := await source.read(65536):
+                        destination.write(data)
+                        await destination.drain()
+
+                await asyncio.gather(relay(reader, upstream), relay(remote, writer))
+            finally:
+                writer.close()
+                if upstream:
+                    upstream.close()
+                connections.discard(task)
+
+        server = await asyncio.start_server(proxy, "127.0.0.1", 0)
+        endpoint = server.sockets[0].getsockname()[1]
+        try:
+            self.engine.settings["destination_url"] = (
+                f"rtmp://127.0.0.1:{endpoint}/live/test"
+            )
+            await self.engine.start("live")
+            await self.until(lambda: self.engine.last_audio >= 4)
+            identity = self.engine.output_id
+            await self.until(
+                lambda: self.engine.hub.feed_fps is not None
+                and self.engine.hub.feed_fps >= 9,
+                timeout=16,
+            )
+            self.assertEqual(self.engine.output_id, identity)
+            self.assertGreaterEqual(self.engine.hub.selected_frame_fps, 8)
+            self.assertLess(self.engine.hub.feed_max_block_seconds, 0.5)
+        finally:
+            await self.engine.stop()
+            server.close()
+            tasks = list(connections)
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            await server.wait_closed()
+            if receiver.returncode is None:
+                receiver.terminate()
+            try:
+                await asyncio.wait_for(receiver.wait(), 3)
+            except TimeoutError:
+                receiver.kill()
+                await receiver.wait()
 
     async def test_two_simultaneous_encoders_and_independent_stop(self):
         manager = self.app["manager"]

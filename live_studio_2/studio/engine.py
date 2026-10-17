@@ -140,6 +140,11 @@ class Engine:
             output_id=self.output_id,
             output_restarts=self.output_restarts,
             camera_switches=self.hub.switches if self.hub else 0,
+            feed_fps=self.hub.feed_fps if self.hub else None,
+            selected_frame_fps=self.hub.selected_frame_fps if self.hub else None,
+            feed_max_block_seconds=(
+                self.hub.feed_max_block_seconds if self.hub else None
+            ),
             music_tracks=len(self.music.items) if self.music else 0,
             music_track=(
                 self.music.items[
@@ -290,6 +295,10 @@ class Engine:
 
     def command(self, listing):
         s = self.settings
+        # VideoHub already paces this pipe. Use its frame-count clock: assigning
+        # demux arrival time here turns an RTMP connection delay into duplicate
+        # video frames, whose audio-paced delivery delays the next camera frame
+        # again. The ticker can look smooth while the camera falls to 1 FPS.
         cmd = [
             "ffmpeg",
             "-nostdin",
@@ -303,8 +312,6 @@ class Engine:
             "pipe:1",
             "-thread_queue_size",
             "2",
-            "-use_wallclock_as_timestamps",
-            "1",
             "-f",
             "rawvideo",
             "-pixel_format",

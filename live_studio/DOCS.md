@@ -210,3 +210,18 @@ Per-live `video_encoder` and `video_decoder`: `cpu` (default), `vaapi`, `auto`. 
 `source_buffer_ms` defaults to250 (0–2000). Source presentation timestamps, rather than packet arrival, pace camera pictures through a bounded buffer. Clock discontinuities reset that buffer; overdue frames are skipped instead of accelerated playback. Increasing buffering adds latency, and cannot repair a long source outage or invent intermediate camera frames.
 
 For relocation, test privately with resume intents disabled before changing HA entries. Preserve identities and move private destinations only when the old sender is stopped; disable old app autostart/watchdog after cutover. Internal HAOS add-on DNS names and media paths require reachable equivalents externally.
+
+### Camera motion diagnostics
+
+Encoder `fps` includes repeated pictures and animated overlays. Status also
+reports `feed_fps` (raw frames delivered to the compositor), `selected_frame_fps`
+(new selected camera frame objects delivered per second), and
+`feed_max_block_seconds` (longest pipe wait). These values update every five
+seconds and are initially null. They measure frame delivery, not optical motion
+or image-content uniqueness. A15FPS camera normally yields about15 selected
+frames and30 compositor frames per second when output is30FPS.
+
+The paced pipe uses frame-count timestamps. A slow ingest handshake may delay
+startup, but cannot recursively create duplicate video frames from each input
+read delay. A sustained encoder/network bottleneck still requires resolving
+that bottleneck; changing timestamp policy does not add processing capacity.

@@ -1,3 +1,13 @@
+## 0.4.1
+
+- Fix camera motion collapsing to about1FPS after a slow RTMP handshake, even
+  while overlays and reported output FPS remain smooth. The paced raw-video
+  pipe now uses a frame-count clock instead of demux arrival timestamps.
+- Expose actual compositor delivery and selected-camera frame rates separately
+  from encoder output FPS, plus the longest pipe wait in the latest window.
+- Fix fresh camera JPEG capture with current FFmpeg versions.
+- Regression coverage uses a real RTMP receiver with delayed connection setup.
+
 ## 0.4.0
 
 - Optional CPU/VAAPI/automatic processing, independent of HAOS or an external Linux host.

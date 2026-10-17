@@ -237,6 +237,9 @@ class VideoHub:
         self.written = 0
         self.switches = 0
         self.last_source = None
+        self.feed_fps = None
+        self.selected_frame_fps = None
+        self.feed_max_block_seconds = None
 
     def healthy(self):
         return {key: source.healthy for key, source in self.sources.items()}
@@ -260,6 +263,10 @@ class VideoHub:
         period = 1 / self.settings["fps"]
         due = time.monotonic()
         health_at = due
+        report_at = due
+        sent = changed = 0
+        longest_block = 0
+        previous = None
         try:
             while process.returncode is None:
                 now = time.monotonic()
@@ -270,8 +277,22 @@ class VideoHub:
                 if source != self.last_source:
                     self.switches += int(self.last_source is not None)
                     self.last_source = source
-                process.stdin.write(self.current_frame())
+                frame = self.current_frame()
+                sent += 1
+                changed += int(frame is not previous)
+                previous = frame
+                process.stdin.write(frame)
+                wait_at = time.monotonic()
                 await asyncio.wait_for(process.stdin.drain(), 8)
+                longest_block = max(longest_block, time.monotonic() - wait_at)
+                elapsed = time.monotonic() - report_at
+                if elapsed >= 5:
+                    self.feed_fps = round(sent / elapsed, 2)
+                    self.selected_frame_fps = round(changed / elapsed, 2)
+                    self.feed_max_block_seconds = round(longest_block, 3)
+                    report_at = time.monotonic()
+                    sent = changed = 0
+                    longest_block = 0
                 self.written += 1
                 due += period
                 # Drop missed wall-clock slots instead of sending a catch-up burst.
@@ -326,8 +347,6 @@ async def snapshot(source, settings, hub=None):
             "-nostdin",
             "-v",
             "error",
-            "-fps_mode",
-            "passthrough",
             "-f",
             "rawvideo",
             "-pixel_format",
