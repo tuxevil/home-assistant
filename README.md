@@ -11,6 +11,7 @@ que HACS pueda gestionar sus versiones.
 | Proyecto | Ubicación | Instalación |
 | --- | --- | --- |
 | Live Studio Engine | [`live_studio/`](live_studio/) | Repositorio de apps/add-ons de HAOS |
+| Live Studio Engine 2 | [`live_studio_2/`](live_studio_2/) | Segunda salida independiente y opcional en HAOS |
 | Live Studio | [tuxevil/ha-live-studio](https://github.com/tuxevil/ha-live-studio) | Integración HACS mediante repositorio personalizado |
 
 ## Instalar el motor en HAOS

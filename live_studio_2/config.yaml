@@ -1,0 +1,26 @@
+name: Live Studio Engine 2
+version: "0.2.1"
+slug: live_studio_2
+url: https://github.com/tuxevil/home-assistant/tree/main/live_studio_2
+description: Local RTSP streaming studio with music, text overlays and a Home Assistant control API
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+map:
+  - type: share
+    read_only: true
+  - type: media
+    read_only: false
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: Optional local control API; prefer the internal app hostname
+options:
+  api_token: ""
+  destination_url: ""
+schema:
+  api_token: password
+  destination_url: password

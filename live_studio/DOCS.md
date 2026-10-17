@@ -146,3 +146,24 @@ todas; probar CPU y memoria antes de añadir más fuentes.
 
 Actualizar primero el motor a 0.2.0 y después la integración a 0.2.0. Ver la
 [guía de migración](MIGRATION.md) antes de reemplazar otro emisor.
+
+## Independent second output
+
+Para preparar otro directo en HAOS, instalar también **Live Studio Engine 2**
+desde este repositorio. Es una app independiente con la misma versión y código.
+Configurar otro token API y añadir una segunda entrada de la integración Live
+Studio, usando `http://<id-del-repositorio>-live-studio-2:8099`. Supervisor determina
+el hostname exacto; también puede usarse su alias interno correspondiente.
+
+Cada instancia conserva sus propias cámaras, selección, textos, clave de ingest,
+marcador de música e intención de emisión. El destino de la segunda queda vacío
+hasta configurarlo explícitamente. Nunca usar la misma clave para dos salidas
+simultáneas: cada emisión independiente necesita su propio ingest.
+
+La muestra de la segunda se guarda en `/media/live_studio_2/preview.mp4`, sin
+sobrescribir la primera. Ambas pueden leer una misma carpeta MP3 de solo lectura,
+pero sus cachés de normalización son independientes y ocupan disco por separado.
+
+La segunda app se genera desde las fuentes canónicas mediante
+`scripts/sync_engine_instances.py`. CI comprueba su igualdad y construye ambas
+imágenes. No contiene conexiones, cámaras ni credenciales de una instalación.

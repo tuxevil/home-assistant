@@ -7,5 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: python3 scripts/sync_engine_instances.py --check
       - run: docker build -t live-studio-engine:test live_studio
       - run: docker run --rm -v "$PWD/live_studio/tests:/tests:ro" --entrypoint python3 live-studio-engine:test -m unittest discover -s /tests -v
+      - run: docker build -t live-studio-engine:second live_studio_2
