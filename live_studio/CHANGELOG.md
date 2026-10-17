@@ -1,3 +1,7 @@
+# 0.1.1 — Preview message timing
+
+- Reset the CTA schedule when starting a preview or live output so the initial message is visible.
+
 # 0.1.0 — First development version
 
 - One configurable RTSP source; H.264 CPU encoding, 1080p/15fps by default.

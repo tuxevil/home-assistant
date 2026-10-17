@@ -268,6 +268,7 @@ class Engine:
             if mode == "live" and not self.settings["destination_url"]:
                 raise ValueError("Configure a destination first")
             self.mode = mode
+            self.anchor = time.monotonic()
             self.duration = duration
             self.wanted = True
             self.error = None

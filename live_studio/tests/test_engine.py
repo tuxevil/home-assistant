@@ -68,6 +68,16 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
     async def post(self, path, data):
         return await self.client.post("/api/" + path, json=data, headers=self.headers)
 
+    async def test_each_preview_starts_with_a_fresh_message_schedule(self):
+        self.engine.settings['rtsp_url']='rtsp://camera.invalid/live'
+        self.engine.anchor=asyncio.get_running_loop().time()-1000
+        async def fake_worker():
+            while self.engine.wanted:await asyncio.sleep(0.01)
+        self.engine.run=fake_worker
+        response=await self.post('start',{'mode':'preview','duration':20})
+        self.assertEqual(response.status,200)
+        self.assertLess(asyncio.get_running_loop().time()-self.engine.anchor,1)
+
     async def test_auth_and_no_install_autostart(self):
         r = await self.client.get("/api/status")
         self.assertEqual(r.status, 401)

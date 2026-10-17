@@ -1,12 +1,12 @@
-# Development validation — 0.1.0
+# Development validation — 0.1.1
 
 Validated on 2026-10-17. These short tests establish a working prototype, not a
 24/7 endurance certification.
 
 - Engine built on AMD64 using Alpine 3.23, FFmpeg 8.0.1 and Python 3.12.
-- Nine automated tests: configuration bounds, literal text, bookmarks, API
+- Ten automated tests: configuration bounds, literal text, bookmarks, API
   authentication, rejected invalid operations, live text updates, sensor expiry,
-  credential-free status and restart/stop intent.
+  credential-free status restart/stop intent and the initial CTA schedule.
 - Isolated Home Assistant 2026.10.1: installation flow, bad-token rejection,
   seven native entities, options flow, selected sensor, editable ticker,
   diagnostics and unload. CI repeats this test with a fake companion.
