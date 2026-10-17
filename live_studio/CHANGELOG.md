@@ -1,3 +1,15 @@
+# 0.2.0 — Continuous camera selection
+
+- Independent RTSP receivers feed one persistent encoder; camera changes preserve
+  output connection and music. Freshness checks, reconnect screen and automatic
+  failover are independent of optional visual scoring.
+- Up to eight named sources with private URLs and optional HA entity mapping.
+- Manual/automatic selection, bounded scoring API, stale-result rejection,
+  configurable daylight preference, margin, confirmations and dwell time.
+- Authenticated fresh snapshots, camera/selection health and continuity counters.
+- MP3 directory changes detected during playback; playlist rebuild restarts output.
+- Companion integration adds optional LLM Vision comparison and native controls.
+
 # 0.1.1 — Preview message timing
 
 - Reset the CTA schedule when starting a preview or live output so the initial message is visible.

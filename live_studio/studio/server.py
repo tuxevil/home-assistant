@@ -63,8 +63,17 @@ async def create_app(data=None, media=None, options=None):
 
     async def metadata(request):
         body = await request.json()
-        if not isinstance(body, dict) or set(body) != {"sensor_text"}:
+        if (
+            not isinstance(body, dict)
+            or "sensor_text" not in body
+            or set(body) - {"sensor_text", "daylight"}
+        ):
             raise ValueError()
+        daylight = body.get("daylight")
+        if daylight is not None and type(daylight) is not bool:
+            raise ValueError("Invalid daylight")
+        engine.director.daylight = daylight
+        engine.director.daylight_at = asyncio.get_running_loop().time()
         engine.sensor_text = clean_text(body["sensor_text"])
         engine.sensor_updated = asyncio.get_running_loop().time()
         return web.json_response({"ok": True})
@@ -85,6 +94,30 @@ async def create_app(data=None, media=None, options=None):
         if not path.exists():
             raise web.HTTPNotFound()
         return web.FileResponse(path)
+
+    async def select(request):
+        body = await request.json()
+        if (
+            not isinstance(body, dict)
+            or not set(body) <= {"mode", "camera_id"}
+            or "mode" not in body
+        ):
+            raise ValueError()
+        await engine.select(body["mode"], body.get("camera_id"))
+        return web.json_response(engine.status())
+
+    async def comparison(request):
+        await engine.comparison(await request.json())
+        return web.json_response(engine.status())
+
+    async def camera(request):
+        try:
+            data = await engine.camera_snapshot(request.match_info["identity"])
+        except (ValueError, TimeoutError):
+            raise web.HTTPServiceUnavailable(text="No fresh camera frame") from None
+        return web.Response(
+            body=data, content_type="image/jpeg", headers={"Cache-Control": "no-store"}
+        )
 
     async def startup(app):
         engine.text_task = asyncio.create_task(engine.texts())
@@ -112,6 +145,9 @@ async def create_app(data=None, media=None, options=None):
     app.router.add_post("/api/start", start)
     app.router.add_post("/api/stop", stop)
     app.router.add_get("/api/preview.mp4", preview)
+    app.router.add_post("/api/selection", select)
+    app.router.add_post("/api/comparison", comparison)
+    app.router.add_get("/api/cameras/{identity}/snapshot.jpg", camera)
     return app
 
 

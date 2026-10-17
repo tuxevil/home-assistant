@@ -1,0 +1,214 @@
+"""Actual FFmpeg tests using generated sources; never touch physical cameras."""
+
+import array
+import asyncio
+import pathlib
+import shutil
+import subprocess
+import tempfile
+import time
+import unittest
+import uuid
+from unittest.mock import patch
+
+from aiohttp.test_utils import TestClient, TestServer
+
+from studio.server import create_app
+from studio.video import Source
+
+
+class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = pathlib.Path(self.temp.name)
+        self.music = pathlib.Path("/media") / ("test-music-" + uuid.uuid4().hex)
+        self.music.mkdir(parents=True)
+        for index, frequency in enumerate([440, 880]):
+            await asyncio.to_thread(
+                subprocess.run,
+                [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    f"sine=frequency={frequency}:duration=1",
+                    "-y",
+                    str(self.music / f"{index}.mp3"),
+                ],
+                check=True,
+                capture_output=True,
+            )
+        self.disabled = set()
+
+        def generated(source):
+            if source.id in self.disabled:
+                return ["false"]
+            color = "red" if source.id == "wide" else "blue"
+            return [
+                "ffmpeg",
+                "-nostdin",
+                "-v",
+                "error",
+                "-re",
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c={color}:s={source.width}x{source.height}:r={source.fps}",
+                "-pix_fmt",
+                "yuv420p",
+                "-threads",
+                "1",
+                "-f",
+                "rawvideo",
+                "pipe:1",
+            ]
+
+        self.patcher = patch.object(Source, "command", generated)
+        self.patcher.start()
+        self.app = await create_app(
+            self.root / "data",
+            self.root / "out",
+            {"api_token": "x" * 40, "destination_url": ""},
+        )
+        self.engine = self.app["engine"]
+        self.client = TestClient(TestServer(self.app))
+        await self.client.start_server()
+        await self.engine.configure(
+            {
+                "width": 640,
+                "height": 360,
+                "fps": 10,
+                "bitrate_kbps": 800,
+                "music_directory": str(self.music),
+                "title": "",
+                "show_clock": False,
+                "ticker": "",
+                "cta": "",
+                "show_camera_name": False,
+                "sources": [
+                    {
+                        "id": "wide",
+                        "name": "Wide",
+                        "rtsp_url": "rtsp://generated.invalid/red",
+                    },
+                    {
+                        "id": "zoom",
+                        "name": "Zoom",
+                        "rtsp_url": "rtsp://generated.invalid/blue",
+                    },
+                ],
+            }
+        )
+
+    async def asyncTearDown(self):
+        await self.client.close()
+        self.patcher.stop()
+        shutil.rmtree(self.music)
+        self.temp.cleanup()
+
+    async def until(self, predicate, timeout=40):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if predicate():
+                return
+            await asyncio.sleep(0.05)
+        self.fail("Timed out waiting for the generated video test")
+
+    async def test_switches_keep_encoder_audio_and_timestamps(self):
+        await self.engine.select("manual", "wide")
+        await self.engine.start("preview", 10)
+        await self.until(lambda: self.engine.last_audio >= 2)
+        identity = self.engine.output_id
+        pid = self.engine.process.pid
+        before = self.engine.last_audio
+        await self.engine.select("manual", "zoom")
+        await self.until(lambda: self.engine.last_audio >= 5)
+        self.assertEqual(
+            (self.engine.output_id, self.engine.process.pid), (identity, pid)
+        )
+        self.assertGreater(self.engine.last_audio, before)
+        await self.engine.select("manual", "wide")
+        await self.until(lambda: not self.engine.wanted)
+        self.assertEqual(self.engine.state, "preview_completed")
+        self.assertEqual(self.engine.output_restarts, 1)
+        clip = self.root / "out/preview.mp4"
+        pixels = await asyncio.to_thread(
+            subprocess.check_output,
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-v",
+                "error",
+                "-i",
+                str(clip),
+                "-an",
+                "-vf",
+                "crop=2:2:320:180,format=rgb24",
+                "-f",
+                "rawvideo",
+                "pipe:1",
+            ],
+        )
+        runs = []
+        for offset in range(0, len(pixels), 12):
+            r, g, b = pixels[offset : offset + 3]
+            color = (
+                "red"
+                if r > 150 and b < 100
+                else "blue" if b > 150 and r < 100 else "other"
+            )
+            if not runs or runs[-1] != color:
+                runs.append(color)
+        self.assertEqual(runs, ["red", "blue", "red"])
+        raw = await asyncio.to_thread(
+            subprocess.check_output,
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-v",
+                "error",
+                "-i",
+                str(clip),
+                "-vn",
+                "-ar",
+                "8000",
+                "-ac",
+                "1",
+                "-f",
+                "s16le",
+                "pipe:1",
+            ],
+        )
+        samples = array.array("h", raw)
+        for start in range(4000, len(samples) - 2000, 2000):
+            window = samples[start : start + 2000]
+            self.assertGreater(
+                sum(v * v for v in window) / len(window),
+                90000,
+                "Unexpected silence at camera switch/playlist wrap",
+            )
+
+    async def test_decoder_failure_does_not_restart_output(self):
+        await self.engine.start("preview", 22)
+        await self.until(lambda: self.engine.last_audio >= 2)
+        identity = self.engine.output_id
+        pid = self.engine.process.pid
+        self.disabled.add("wide")
+        self.engine.hub.sources["wide"].process.kill()
+        await self.until(lambda: self.engine.director.active == "zoom", timeout=17)
+        self.assertEqual(
+            (self.engine.output_id, self.engine.process.pid), (identity, pid)
+        )
+        self.assertTrue(self.engine.hub.healthy()["zoom"])
+        with self.assertRaises(ValueError):
+            await self.engine.camera_snapshot("wide")
+        self.disabled.remove("wide")
+        await self.until(lambda: self.engine.hub.healthy()["wide"], timeout=8)
+        self.assertEqual(
+            (self.engine.output_id, self.engine.process.pid), (identity, pid)
+        )
+        await self.engine.stop()
+        self.assertEqual(self.engine.state, "stopped")

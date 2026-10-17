@@ -1,25 +1,26 @@
-# Development validation — 0.1.1
+# Development validation — 0.2.0
 
-Validated on 2026-10-17. These short tests establish a working prototype, not a
-24/7 endurance certification.
+Validated on 2026-10-17. AMD64, Alpine 3.23, FFmpeg 8.0.1; Home Assistant 2026.10.1.
+These tests validate the development candidate, not uninterrupted 24/7 operation.
 
-- Engine built on AMD64 using Alpine 3.23, FFmpeg 8.0.1 and Python 3.12.
-- Ten automated tests: configuration bounds, literal text, bookmarks, API
-  authentication, rejected invalid operations, live text updates, sensor expiry,
-  credential-free status restart/stop intent and the initial CTA schedule.
-- Isolated Home Assistant 2026.10.1: installation flow, bad-token rejection,
-  seven native entities, options flow, selected sensor, editable ticker,
-  diagnostics and unload. CI repeats this test with a fake companion.
-- Actual RTSP source, 2880×1620 HEVC: local 20-second MP4 output at configured
-  1920×1080/15fps, H.264 + AAC, including music and an in-flight ticker update.
-- Container capped at 1.5 vCPU and 600 MiB. During sampled encoding, CPU peaked
-  at approximately 82% of one vCPU and reported memory at 381 MiB. Ryzen 9 7945HX
-  host; Home Assistant VM has 3 vCPU. Preparation and startup are additional work.
-- Local RTMP receiver: successful H.264/AAC output, automatic reconnect after
-  killing only the test encoder, and intentional stop remaining stopped after
-  restarting the test container. No public ingest was used for these tests.
-- Production sender and its public broadcast were not replaced.
+- 21 automated engine tests: existing API/configuration/bookmark checks plus
+  manual/automatic selection, day/night preference, dwell, confirmations, health
+  failover and expired/duplicate/in-flight comparison rejection.
+- Generated red/blue video switches verify the same encoder PID/output ID,
+  decoded frame colors and AAC energy across changes and short playlist loops.
+- A generated decoder was killed and restored: fresh snapshot rejection,
+  automatic alternate source and unchanged encoder session were verified.
+- Isolated real Home Assistant lifecycle: 20 native entities for two cameras,
+  options menus, text, numbers, manual/automatic selection, sensor/daylight,
+  optional mocked vision provider, sanitized provider failure and unload.
+- Two actual 2880×1620 HEVC RTSP sources, 30 MP3 tracks loaded, local RTMP receiver,
+  H.264 1920×1080/15fps + AAC. Ten-minute test with eight manual source changes
+  confirmed one encoder session, current video and no output reconnection.
+- Container limited to 1.8 vCPU and 1100 MiB. Typical sampled use approximately
+  1.5–1.7 logical CPUs and 565–615 MiB; preparation/JPEG capture add work. On a
+  Ryzen 9 7945HX VM with 3 vCPU. These measurements include decoding both cameras.
+- Production sender was not restarted, replaced or used as the test destination.
 
-AArch64, GPU encoding, multiple scenes and continuous camera switching have not
-been validated or implemented in this release. Longer local endurance tests and
-visual review should precede migration of an existing broadcast.
+AArch64 hardware, GPU encoding, more than two real sources and multiday endurance
+remain unvalidated. Public event/OAuth/Analytics and external notification
+migrations require the separate checks in [MIGRATION.md](MIGRATION.md).

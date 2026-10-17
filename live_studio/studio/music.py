@@ -15,11 +15,20 @@ class Music:
         self.data = Path(data)
         self.items = []
 
+    def signature(self):
+        return [
+            (str(x), x.stat().st_size, x.stat().st_mtime_ns)
+            for x in sorted(self.root.glob("*"))
+            if x.is_file() and x.suffix.lower() == ".mp3"
+        ]
+
     def prepare(self):
         cache = self.data / "audio"
         cache.mkdir(exist_ok=True)
         self.items = []
-        for original in sorted(self.root.glob("*.mp3")):
+        self.initial = self.signature()
+        for path, _, _ in self.initial:
+            original = Path(path)
             stat = original.stat()
             key = hashlib.sha256(
                 f"{original}:{stat.st_size}:{stat.st_mtime_ns}".encode()

@@ -2,9 +2,9 @@
 
 Proyectos abiertos para Home Assistant. Licencia MIT.
 
-## Live Studio — 0.1.1 (versión de desarrollo)
+## Live Studio — 0.2.0 (versión de desarrollo)
 
-Motor local de streaming: una cámara RTSP, música ambiental y textos actualizables
+Motor local de streaming: varias cámaras RTSP, música ambiental y textos actualizables
 sobre el vídeo. La integración de Home Assistant se distribuye por separado para
 que HACS pueda gestionar sus versiones.
 
@@ -23,7 +23,5 @@ El repositorio puede alojar más apps y documentación. Las futuras integracione
 HACS tendrán repositorios propios; no se agrupan varios dominios dentro de un
 mismo `custom_components/` para su distribución por HACS.
 
-La primera versión todavía no incluye escenas múltiples, cambios de cámara sin
-cortes, GPU, selección con IA ni conexión OAuth con YouTube. No es una migración
-automática de instalaciones existentes. Cada función se incorporará con su propia
-configuración, pruebas y documentación.
+Incluye cambio continuo entre cámaras y selección automática opcional con IA.
+No incluye GPU, OAuth de YouTube ni migración automática de instalaciones existentes.

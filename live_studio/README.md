@@ -1,9 +1,11 @@
 # Live Studio Engine
 
 Motor de vídeo local para [Live Studio](https://github.com/tuxevil/ha-live-studio).
-Versión de desarrollo **0.1.1**, licencia MIT.
+Versión de desarrollo **0.2.0**, licencia MIT.
 
-- Entrada RTSP por TCP; salida H.264 y AAC.
+- Hasta ocho entradas RTSP por TCP; salida H.264 y AAC.
+- Selector manual/automático sin reiniciar el codificador ni la música.
+- Recuperación por cámara y pantalla de reconexión si falta vídeo.
 - Reloj, título, sensor, marquesina y aviso periódico sobre la imagen.
 - Actualizaciones de texto sin reiniciar FFmpeg.
 - Música MP3 normalizada una vez, en bucle y con posición guardada.
