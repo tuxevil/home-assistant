@@ -235,7 +235,12 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.to_thread(
                 subprocess.check_output,
                 [
-                    "ffprobe", "-v", "error", "-show_streams", "-of", "json",
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_streams",
+                    "-of",
+                    "json",
                     str(self.root / "out/preview.mp4"),
                 ],
                 text=True,
@@ -243,3 +248,26 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
         )
         durations = [float(s["duration"]) for s in probe["streams"]]
         self.assertLess(max(durations) - min(durations), 0.3)
+
+    async def test_two_simultaneous_encoders_and_independent_stop(self):
+        manager = self.app["manager"]
+        second = await manager.create(
+            {"name": "Second", "config": self.engine.public_config()}
+        )
+        other = manager.get(second["live_id"])
+        await self.engine.start("preview", 12)
+        await other.start("preview", 12)
+        await self.until(lambda: self.engine.last_audio >= 2 and other.last_audio >= 2)
+        self.assertNotEqual(self.engine.process.pid, other.process.pid)
+        other_id, other_pid = other.output_id, other.process.pid
+        await self.engine.stop()
+        before = other.last_audio
+        await self.until(lambda: other.last_audio > before + 1)
+        self.assertEqual((other.output_id, other.process.pid), (other_id, other_pid))
+        self.assertTrue(other.wanted)
+        await self.engine.start("preview", 5)
+        await self.until(lambda: not self.engine.wanted and not other.wanted)
+        self.assertEqual(other.output_restarts, 1)
+        self.assertTrue((self.engine.media / "preview.mp4").exists())
+        self.assertTrue((other.media / "preview.mp4").exists())
+        self.assertNotEqual(self.engine.media, other.media)

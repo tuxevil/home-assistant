@@ -1,3 +1,14 @@
+# 0.3.0 — Multiple independent lives
+
+- One companion hosts up to16 independently controlled lives, each with1–8camera
+  streams, settings, ingest, encoder, music bookmark and preview folder.
+- Create/list/rename/delete API, shared camera catalog and private per-live ingest
+  management. New lives start stopped without a destination. Active lives cannot
+  be deleted; a destination cannot be assigned twice to YouTube URL aliases.
+- Legacy single-live identity, data files and API aliases remain compatible.
+- Companion integration creates/manages lives and optional sensor lists per live.
+- Long information lines scroll; unavailable readings disappear independently.
+
 # 0.2.1 — Wall-clock video timing
 
 - Timestamp incoming raw frames from the real clock and normalize the initial

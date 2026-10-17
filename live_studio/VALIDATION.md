@@ -1,3 +1,29 @@
+# Development validation — 0.3.0
+
+Validated on 2026-10-17, AMD64 / FFmpeg8 / Home Assistant2026.10.1.
+
+- 29 engine tests include creation, validation, duplicate ingest rejection,
+  independent metadata, start/stop/delete, persisted per-live intent and damaged
+  configuration isolation. Existing switching, AAC continuity and wall-clock
+  regression tests remain in place.
+- Two actual FFmpeg encoders ran simultaneously with generated sources. Stopping
+  and restarting one preserved the other's PID, output ID, progress and preview.
+- Two real HEVC camera streams fed two independent local RTMP receivers in one
+  companion. Both carried H264/AAC and loaded30MP3tracks. Stopping/deleting A
+  and renaming B preserved B's output ID and advancing timeline. Sensor metadata
+  was present only in A; B's line stayed empty. No public destination was used.
+- Isolated Home Assistant smoke test covers native create/connect flows,
+  multi-camera selection, zero/multiple sensors per live, unavailable-reading
+  removal, independent controls, private destination submission, active-delete
+  rejection, identity-checked reconfiguration and version1 sensor migration.
+- The optional Engine2 distribution is generated from canonical sources and built
+  in CI. New lives do not require separate add-on installations.
+
+The following earlier development measurements are retained for context; they are
+not benchmarks for arbitrary numbers of simultaneous lives. Resource use grows
+with each active encoder and its camera decoders. Multiday endurance, AArch64 and
+GPU encoding remain outside these tests.
+
 # Development validation — 0.2.1
 
 Validated on 2026-10-17. AMD64, Alpine 3.23, FFmpeg 8.0.1; Home Assistant 2026.10.1.

@@ -255,7 +255,10 @@ class Engine:
             "source": ("24", "h-th-132"),
             "title": ("24", "24"),
             "clock": ("w-tw-24", "24"),
-            "sensor": ("24", f"h-{bottom-12}"),
+            "sensor": (
+                "if(lte(text_w\\,w-48)\\,24\\,24-mod(t*35\\,text_w+w))",
+                f"h-{bottom-12}",
+            ),
             "ticker": ("w-mod(t*65\\,w+text_w)", "h-th-16"),
             "cta": ("w-tw-24", f"h-{bottom}-th-24"),
         }

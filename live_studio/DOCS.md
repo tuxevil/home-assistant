@@ -12,13 +12,15 @@ espacio para la caché de música. La integración se prueba con Home Assistant
 1. Instalar Live Studio Engine desde este repositorio y arrancarlo.
 2. Configurar `api_token` con al menos 32 caracteres ASCII sin espacios. Generar un
    valor aleatorio propio; no usar claves copiadas de ejemplos.
-3. Dejar `destination_url` vacío para las pruebas locales. Para emitir, configurar
-   la URL RTMP/RTMPS completa de ingest y su clave en este campo de contraseña.
+3. Dejar `destination_url` vacío para las pruebas. Este campo es una compatibilidad
+   para la salida original; los nuevos destinos se configuran por live en las
+   opciones de la integración.
 4. Iniciar la app. La API queda disponible, pero todavía no emite.
 5. Instalar y añadir la integración Live Studio, indicando la dirección interna
    `http://<id-del-repositorio>-live-studio:8099` y el mismo token.
-6. En las opciones de la integración, añadir cámaras con su URL RTSP, nombre y
-   descripción. Configurar carpeta de música, vídeo y textos en sus menús.
+6. Conectar el live existente o elegir **Crear un live**, indicando nombre, una o
+   varias fuentes y sensores opcionales. En Opciones se administran cámaras,
+   música, textos, reglas y destino de ese live.
 7. Pulsar **Grabar vista previa de 20 segundos**. Ver el archivo
    `/media/live_studio/preview.mp4` desde los medios de Home Assistant.
 8. Una vez revisado el resultado, activar **Emisión en vivo** para publicar en el
@@ -52,9 +54,11 @@ desde dashboards y automatizaciones, por ejemplo con `text.set_value`. Un texto
 vacío oculta ese elemento. El reloj usa una zona horaria IANA, como `Europe/Madrid`.
 Los cambios de texto se aplican en aproximadamente un segundo.
 
-El sensor se elige en las opciones de la integración. Se transmite su nombre,
-valor y unidad cada 15 segundos. `unknown` o `unavailable` retiran el texto; si
-Home Assistant deja de actualizarlo se oculta en un máximo de 120 segundos.
+Cada live puede seleccionar entre cero y ocho sensores en **Live y sensores**.
+Se transmite su nombre, valor y unidad cada15 segundos. `unknown` o `unavailable`
+retiran solo esa lectura; una lista vacía no muestra información. Las líneas
+largas se desplazan para permitir leerlas. Si Home Assistant deja de actualizar
+los datos, se ocultan en un máximo de120 segundos.
 No hay dependencia de MQTT, Frigate, una cámara concreta, IA ni un proveedor cloud.
 
 La marquesina se desplaza en una franja inferior semitransparente. El aviso aparece
@@ -67,8 +71,8 @@ La distribución visual y la velocidad de desplazamiento siguen siendo fijas.
 
 Detener antes de añadir/retirar cámaras, editar sus conexiones, cambiar carpeta de
 música, resolución, fps, bitrate o hilos. Seleccionar otra cámara ya configurada,
-los textos y los parámetros de selección sí se cambian en vivo. Solo hay una salida
-activa; una vista previa no puede arrancar encima de una emisión en vivo.
+los textos y los parámetros de selección sí se cambian en vivo. Cada live tiene una sola salida activa; su vista previa no puede arrancar encima
+de su propia emisión. Otros lives pueden continuar emitiendo simultáneamente.
 
 La salida en vivo reintenta tras fallos; el watchdog reconecta si el vídeo deja de
 avanzar 45 segundos. Se conserva la intención de emitir tras reiniciar la app.
@@ -147,23 +151,50 @@ todas; probar CPU y memoria antes de añadir más fuentes.
 Actualizar primero el motor a 0.2.0 y después la integración a 0.2.0. Ver la
 [guía de migración](MIGRATION.md) antes de reemplazar otro emisor.
 
-## Independent second output
+## Varios lives en un motor
 
-Para preparar otro directo en HAOS, instalar también **Live Studio Engine 2**
-desde este repositorio. Es una app independiente con la misma versión y código.
-Configurar otro token API y añadir una segunda entrada de la integración Live
-Studio, usando `http://<id-del-repositorio>-live-studio-2:8099`. Supervisor determina
-el hostname exacto; también puede usarse su alias interno correspondiente.
+Un motor 0.3.0 puede alojar hasta 16 lives, según los recursos disponibles. Cada uno
+selecciona1–8 fuentes de cámara y cero a ocho sensores. Los límites no garantizan
+que un equipo pueda transcodificar todas esas salidas a la vez: medir su carga.
 
-Cada instancia conserva sus propias cámaras, selección, textos, clave de ingest,
-marcador de música e intención de emisión. El destino de la segunda queda vacío
-hasta configurarlo explícitamente. Nunca usar la misma clave para dos salidas
-simultáneas: cada emisión independiente necesita su propio ingest.
+En Ajustes → Integraciones → Live Studio → Añadir entrada, elegir **Crear un live**.
+Se reutiliza la conexión del motor existente. Indicar nombre, fuentes y sensores;
+si el catálogo está vacío, el asistente pide la primera URL RTSP. También se puede
+conectar a un live ya creado o a otro motor. No es necesario instalar otra app por
+cada emisión. El catálogo ofrece fuentes configuradas en los otros lives del motor;
+una misma cámara puede participar en varios, con decodificadores independientes.
 
-La muestra de la segunda se guarda en `/media/live_studio_2/preview.mp4`, sin
-sobrescribir la primera. Ambas pueden leer una misma carpeta MP3 de solo lectura,
-pero sus cachés de normalización son independientes y ocupan disco por separado.
+En Opciones de cada entrada:
 
-La segunda app se genera desde las fuentes canónicas mediante
-`scripts/sync_engine_instances.py`. CI comprueba su igualdad y construye ambas
-imágenes. No contiene conexiones, cámaras ni credenciales de una instalación.
+- **Live y sensores:** renombrar y seleccionar una lista propia, incluso vacía.
+- **Cámaras:** seleccionar fuentes existentes o añadir/editar conexiones RTSP.
+- **Destino de emisión:** URL RTMP/RTMPS privada con clave. No se devuelve ni se
+  guarda en las opciones de Home Assistant. Detener ese live antes de cambiarla.
+  Un campo vacío conserva el destino; retirarlo exige marcar la opción explícita.
+- **Vídeo/música, textos y reglas:** independientes para cada live.
+- **Eliminar este live:** requiere detenerlo y confirmar. No detiene otros lives
+  ni cierra eventos de YouTube. Se archivan configuraciones pequeñas para recuperación.
+
+Un live nuevo queda detenido y sin destino. Su propia intención de emisión se
+restaura tras reiniciar el motor únicamente si se había iniciado explícitamente.
+Un error de recepción, codificación o configuración de un live no arranca ni
+cambia la salida de otro. Reiniciar o detener toda la app sí afecta a todos sus
+lives: para manejar uno solo, usar sus entidades nativas.
+
+Los datos viven en `/data/lives/<id>`; el live migrado conserva `/data` y sus IDs.
+Las muestras nuevas se guardan en `/media/live_studio/<id>/preview.mp4`; la original
+mantiene `/media/live_studio/preview.mp4`. Los marcadores y cachés de audio son
+independientes, aunque varios lives lean la misma carpeta MP3. Esto ocupa disco.
+
+La actualización desde 0.2 conserva los datos y las entidades del live original.
+Las entradas existentes de motores anteriores pueden seguir conectadas, pero para
+crear nuevos lives en un motor se requiere0.3.0. Engine2 sigue disponible como
+servidor adicional opcional por compatibilidad; no hace falta para crear otro live.
+Su código se genera con`scripts/sync_engine_instances.py` y CI comprueba la igualdad.
+
+La API autenticada añade`GET /api/server`, `GET/POST /api/lives`,
+`GET/PATCH/DELETE /api/lives/<id>`, `GET /api/catalog`, y rutas por live como
+`/api/lives/<id>/status`, `config`, `metadata`, `start`, `stop`, `destination` y
+`cameras/<source>/snapshot.jpg`. Las rutas originales siguen siendo alias del
+live original. El token del motor permite administrar todos sus lives; usarlo solo
+en una red y clientes de confianza. No se añade telemetría ni una cuenta cloud.
