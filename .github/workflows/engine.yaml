@@ -1,0 +1,11 @@
+name: Engine tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t live-studio-engine:test live_studio
+      - run: docker run --rm -v "$PWD/live_studio/tests:/tests:ro" --entrypoint python3 live-studio-engine:test -m unittest discover -s /tests -v
