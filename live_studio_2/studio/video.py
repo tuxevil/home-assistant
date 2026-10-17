@@ -19,13 +19,15 @@ class Source:
         self.task = None
         self.stopping = False
         self.reconnects = 0
+        self.decode_errors = 0
+        self.decode_error_at = None
 
     @property
     def healthy(self):
         return self.received is not None and time.monotonic() - self.received < 5
 
     def command(self):
-        graph = f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={self.fps},format=yuv420p"
+        graph = f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
         return [
             "ffmpeg",
             "-nostdin",
@@ -39,9 +41,13 @@ class Source:
             "-threads",
             "1",
             "-analyzeduration",
-            "500000",
+            "2000000",
             "-probesize",
-            "1000000",
+            "4000000",
+            "-fflags",
+            "+discardcorrupt",
+            "-err_detect",
+            "explode",
             "-i",
             self.url,
             "-an",
@@ -52,6 +58,8 @@ class Source:
             "1",
             "-threads",
             "1",
+            "-fps_mode",
+            "passthrough",
             "-f",
             "rawvideo",
             "-pix_fmt",
@@ -59,17 +67,30 @@ class Source:
             "pipe:1",
         ]
 
+    async def read_errors(self, process):
+        # Classify locally: raw FFmpeg lines may contain camera credentials.
+        while line := await process.stderr.readline():
+            lower = line.lower()
+            if any(marker in lower for marker in (
+                b"could not find ref", b"error constructing", b"corrupt",
+                b"invalid data", b"pps id out of range", b"error while decoding",
+            )):
+                self.decode_errors += 1
+                self.decode_error_at = time.monotonic()
+
     async def receive(self):
         while not self.stopping:
             self.frame = None
             self.received = None
+            errors_task = None
             try:
                 self.process = await asyncio.create_subprocess_exec(
                     *self.command(),
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
                     limit=self.size * 2,
                 )
+                errors_task = asyncio.create_task(self.read_errors(self.process))
                 while not self.stopping:
                     frame = await asyncio.wait_for(
                         self.process.stdout.readexactly(self.size),
@@ -81,6 +102,9 @@ class Source:
             except (OSError, TimeoutError, asyncio.IncompleteReadError):
                 pass
             finally:
+                if errors_task:
+                    errors_task.cancel()
+                    await asyncio.gather(errors_task, return_exceptions=True)
                 if self.process and self.process.returncode is None:
                     try:
                         self.process.terminate()
@@ -179,6 +203,8 @@ class VideoHub:
                     else round(time.monotonic() - s.received, 2)
                 ),
                 reconnects=s.reconnects,
+                decode_errors=s.decode_errors,
+                last_decode_error_age=(None if s.decode_error_at is None else round(time.monotonic() - s.decode_error_at, 2)),
             )
             for key, s in self.sources.items()
         }
@@ -195,6 +221,8 @@ async def snapshot(source, settings, hub=None):
             "-nostdin",
             "-v",
             "error",
+            "-fps_mode",
+            "passthrough",
             "-f",
             "rawvideo",
             "-pixel_format",
@@ -216,9 +244,13 @@ async def snapshot(source, settings, hub=None):
             "-timeout",
             "5000000",
             "-analyzeduration",
-            "500000",
+            "2000000",
             "-probesize",
-            "1000000",
+            "4000000",
+            "-fflags",
+            "+discardcorrupt",
+            "-err_detect",
+            "explode",
             "-threads",
             "1",
             "-i",
@@ -244,7 +276,7 @@ async def snapshot(source, settings, hub=None):
         *command,
         stdin=asyncio.subprocess.PIPE if frame else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
     )
     try:
         data, _ = await asyncio.wait_for(process.communicate(frame), 12)

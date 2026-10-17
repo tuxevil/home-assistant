@@ -1,5 +1,5 @@
 name: Live Studio Engine 2
-version: "0.3.0"
+version: "0.3.1"
 slug: live_studio_2
 url: https://github.com/tuxevil/home-assistant/tree/main/live_studio_2
 description: Local RTSP streaming studio with music, text overlays and a Home Assistant control API

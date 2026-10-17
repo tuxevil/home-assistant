@@ -1,3 +1,9 @@
+## 0.3.1
+
+- Reject damaged source packets and decoding errors before overlay encoding.
+- Preserve each camera's native frame cadence; resample only at the output.
+- Expose sanitized per-camera decode error counters without logging private URLs.
+
 # 0.3.0 — Multiple independent lives
 
 - One companion hosts up to16 independently controlled lives, each with1–8camera
