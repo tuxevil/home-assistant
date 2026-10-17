@@ -367,7 +367,8 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
                 }
             }
         )
-        await self.until(lambda: not self.engine.layout_pending)
+        await self.until(lambda: not self.engine.layout_pending or self.engine.layout_error)
+        self.assertIsNone(self.engine.layout_error)
         response = await self.client.get(
             "/api/overlay/snapshot.jpg", headers={"Authorization": "Bearer " + "x" * 40}
         )

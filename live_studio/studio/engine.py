@@ -85,6 +85,7 @@ class Engine:
         self.output_restarts = 0
         self.reload_music = False
         self.snapshot_lock = asyncio.Lock()
+        self.layout_error = None
         self.layout_rendered = None
         self.layout_pending = False
         self.layout_revision = 0
@@ -161,6 +162,7 @@ class Engine:
             ),
             destination_configured=bool(self.settings["destination_url"]),
             overlay_pending=self.layout_pending,
+            overlay_error=self.layout_error,
             fps=self.metrics.get("fps"),
             speed=self.metrics.get("speed"),
             frames=self.metrics.get("frame"),
@@ -191,6 +193,7 @@ class Engine:
         sources_changed = self.settings["sources"] != settings["sources"]
         policy_changed = any(self.settings[k] != settings[k] for k in POLICY)
         if self.settings["overlay_layout"] != settings["overlay_layout"]:
+            self.layout_error = None
             self.layout_revision += 1
             self.layout_pending = bool(self.wanted)
         self.settings = settings
@@ -300,11 +303,14 @@ class Engine:
                     await layout.update(
                         s, self.overlay, self.font, self.layout_rendered
                     )
-                except (OSError, TimeoutError, ValueError, layout.zmq.ZMQError):
+                except ValueError as err:
+                    self.layout_error = str(err) if str(err).startswith("Overlay command rejected:") else "Overlay command rejected"
+                except (OSError, TimeoutError, layout.zmq.ZMQError):
                     # The private command socket may not be ready at startup.
                     # Retain the desired settings and retry without reconnecting.
-                    pass
+                    self.layout_error = "Overlay command channel is not ready"
                 else:
+                    self.layout_error = None
                     self.layout_rendered = deepcopy(s)
                     self.layout_applied_revision = revision
                     self.layout_pending = revision != self.layout_revision

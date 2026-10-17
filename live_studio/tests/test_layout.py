@@ -58,7 +58,12 @@ class RuntimeCommandTests(unittest.IsolatedAsyncioTestCase):
             )
             try:
                 await asyncio.sleep(0.5)
-                await layout.update(engine.settings, engine.overlay, engine.font)
+                from studio.config import validate
+                changed = validate({"overlay_layout": {
+                    "band": {"position": "top", "height": 120, "visible": True},
+                    "title": {"font_size": 90, "x": 300, "y": 100, "color": "#00FF00"},
+                }}, engine.settings)
+                await layout.update(changed, engine.overlay, engine.font, engine.settings)
             finally:
                 process.terminate()
                 _, errors = await process.communicate()
