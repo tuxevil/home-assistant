@@ -130,14 +130,24 @@ class LiveManager:
         }
 
     def catalog(self):
-        sources = {}
+        # Removing a camera from a live must not erase it from the library.
+        path = self.data / "camera_catalog.json"
+        try:
+            sources = json.loads(path.read_text())
+            if not isinstance(sources, dict):
+                sources = {}
+        except (OSError, ValueError):
+            sources = {}
+        previous = dict(sources)
         for engine in self.engines.values():
             for source in engine.settings["sources"]:
                 key = (
                     "source_"
                     + hashlib.sha256(source["rtsp_url"].encode()).hexdigest()[:16]
                 )
-                sources.setdefault(key, dict(source, catalog_id=key))
+                sources[key] = dict(source, catalog_id=key)
+        if sources != previous:
+            atomic_json(path, sources)
         return {"sources": list(sources.values())}
 
     def _name(self, name, exclude=None):

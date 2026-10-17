@@ -182,9 +182,11 @@ class Engine:
     async def configure(self, patch):
         if "destination_url" in patch:
             raise ValueError("Set destination in the companion options")
-        if self.wanted and set(patch) - OVERLAYS - POLICY:
-            raise ValueError("Stop the output before changing video or source settings")
+        if self.wanted and set(patch) - OVERLAYS - POLICY - {"sources"}:
+            raise ValueError("Stop the output before changing video settings")
         settings = validate(patch, self.settings)
+        if self.wanted and "sources" in patch and not settings["sources"]:
+            raise ValueError("Keep at least one camera while the output is running")
         await asyncio.to_thread(
             atomic_json,
             self.data / "settings.json",
@@ -200,7 +202,26 @@ class Engine:
         self.director.settings = settings
         if sources_changed:
             self.sources_revision = uuid.uuid4().hex
-            self.director = Director(self.data, settings["sources"], settings)
+            # Keep the director shared with the running hub and preserve the selected
+            # camera if it still belongs to this live. Invalidate outstanding AI.
+            ids = {source["id"] for source in settings["sources"]}
+            self.director.result = {}
+            self.director.compared_at = None
+            self.director.reset()
+            self.director.revision = uuid.uuid4().hex
+            if self.director.active not in ids:
+                healthy = self.hub.healthy() if self.hub else {}
+                replacement = next(
+                    (s["id"] for s in settings["sources"] if healthy.get(s["id"])), None
+                )
+                replacement = replacement or (
+                    settings["sources"][0]["id"] if ids else None
+                )
+                self.director.active = replacement
+                self.director.last_switch = time.time()
+            self.director.persist()
+            if self.hub:
+                await self.hub.reconfigure(settings)
         elif policy_changed:
             self.director.reset()
             self.director.revision = uuid.uuid4().hex

@@ -119,6 +119,41 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.05)
         self.fail("Timed out waiting for the generated video test")
 
+    async def test_camera_membership_keeps_encoder_audio_and_retained_decoder(self):
+        await self.engine.select("manual", "wide")
+        await self.engine.start("preview", 20)
+        await self.until(lambda: self.engine.last_audio >= 2)
+        identity, pid = self.engine.output_id, self.engine.process.pid
+        hub = self.engine.hub
+        wide, zoom = hub.sources["wide"], hub.sources["zoom"]
+        before = self.engine.last_audio
+        revision = self.engine.sources_revision
+        sources = self.engine.settings["sources"]
+        extra = dict(
+            id="extra", name="Extra", rtsp_url="rtsp://generated.invalid/extra"
+        )
+        await self.engine.configure({"sources": [sources[0], extra]})
+        self.assertIs(self.engine.hub, hub)
+        self.assertIs(hub.sources["wide"], wide)
+        self.assertTrue(zoom.stopping)
+        self.assertNotEqual(self.engine.sources_revision, revision)
+        self.assertEqual(self.engine.director.active, "wide")
+        await self.until(lambda: hub.sources["extra"].healthy)
+        await self.engine.configure({"sources": [extra]})
+        self.assertEqual(self.engine.director.active, "extra")
+        self.assertEqual(self.engine.director.mode, "manual")
+        self.assertTrue(wide.stopping)
+        await self.until(lambda: self.engine.last_audio > before + 2)
+        self.assertEqual(
+            (self.engine.output_id, self.engine.process.pid), (identity, pid)
+        )
+        self.assertEqual(self.engine.output_restarts, 1)
+        with self.assertRaises(ValueError):
+            await self.engine.configure({"sources": []})
+        with self.assertRaises(ValueError):
+            await self.engine.configure({"width": 1280})
+        self.assertEqual(list(hub.sources), ["extra"])
+
     async def test_switches_keep_encoder_audio_and_timestamps(self):
         await self.engine.select("manual", "wide")
         await self.engine.start("preview", 10)
@@ -367,7 +402,9 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
                 }
             }
         )
-        await self.until(lambda: not self.engine.layout_pending or self.engine.layout_error)
+        await self.until(
+            lambda: not self.engine.layout_pending or self.engine.layout_error
+        )
         self.assertIsNone(self.engine.layout_error)
         response = await self.client.get(
             "/api/overlay/snapshot.jpg", headers={"Authorization": "Bearer " + "x" * 40}

@@ -219,6 +219,7 @@ class Source:
 class VideoHub:
     def __init__(self, settings, director, acceleration=None):
         self.settings = settings
+        self.acceleration = acceleration
         self.director = director
         self.sources = {
             s["id"]: Source(
@@ -240,6 +241,31 @@ class VideoHub:
         self.feed_fps = None
         self.selected_frame_fps = None
         self.feed_max_block_seconds = None
+
+    async def reconfigure(self, settings):
+        """Replace only changed decoders; keep the encoder and audio alive."""
+        sources = {}
+        for config in settings["sources"]:
+            source = self.sources.get(config["id"])
+            if source is None or source.url != config["rtsp_url"]:
+                source = Source(
+                    dict(config, _decoder_auto=settings.get("video_decoder") == "auto"),
+                    settings["width"],
+                    settings["height"],
+                    settings["fps"],
+                    self.acceleration,
+                    settings.get("source_buffer_ms", 250),
+                )
+                source.task = asyncio.create_task(source.receive())
+            sources[config["id"]] = source
+        removed = [
+            source
+            for key, source in self.sources.items()
+            if sources.get(key) is not source
+        ]
+        self.sources = sources
+        self.settings = settings
+        await asyncio.gather(*(source.stop() for source in removed))
 
     def healthy(self):
         return {key: source.healthy for key, source in self.sources.items()}

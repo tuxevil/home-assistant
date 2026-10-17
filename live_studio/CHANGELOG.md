@@ -1,3 +1,11 @@
+## 0.5.1
+
+- Add or remove per-live cameras while streaming, retaining unchanged decoders,
+  the encoder, RTMP connection and music timeline.
+- Select another local source if the active camera is removed; invalidate stale
+  AI comparisons and retain manual/automatic selection mode.
+- Remember unassigned cameras in a private persistent source library.
+
 ## 0.5.0
 
 - Configure each overlay element independently: placement, visibility, size,

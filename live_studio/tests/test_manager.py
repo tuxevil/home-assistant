@@ -46,6 +46,17 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             await response.json() if response.content_type == "application/json" else {}
         )
 
+    async def test_catalog_remembers_unassigned_cameras_across_restart(self):
+        engine = self.manager.get("default")
+        await engine.configure({"sources": [SOURCE]})
+        first = self.manager.catalog()["sources"]
+        await engine.configure({"sources": []})
+        self.assertEqual(self.manager.catalog()["sources"], first)
+        from studio.manager import LiveManager
+
+        restarted = LiveManager(self.root / "data", self.root / "media", {})
+        self.assertEqual(restarted.catalog()["sources"], first)
+
     async def create(self, name):
         return await self.request(
             "POST", "lives", {"name": name, "config": {"sources": [SOURCE]}}, 201
