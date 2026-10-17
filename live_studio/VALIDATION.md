@@ -1,9 +1,9 @@
-# Development validation — 0.2.0
+# Development validation — 0.2.1
 
 Validated on 2026-10-17. AMD64, Alpine 3.23, FFmpeg 8.0.1; Home Assistant 2026.10.1.
 These tests validate the development candidate, not uninterrupted 24/7 operation.
 
-- 21 automated engine tests: existing API/configuration/bookmark checks plus
+- 22 automated engine tests: existing API/configuration/bookmark checks plus
   manual/automatic selection, day/night preference, dwell, confirmations, health
   failover and expired/duplicate/in-flight comparison rejection.
 - Generated red/blue video switches verify the same encoder PID/output ID,
@@ -24,3 +24,9 @@ These tests validate the development candidate, not uninterrupted 24/7 operation
 AArch64 hardware, GPU encoding, more than two real sources and multiday endurance
 remain unvalidated. Public event/OAuth/Analytics and external notification
 migrations require the separate checks in [MIGRATION.md](MIGRATION.md).
+
+The initial 0.2.0 capped-CPU endurance run revealed approximately 0.94x media-clock
+progress despite stable source switching. 0.2.1 uses wall-clock input timestamps;
+the delayed-feed regression verifies that slow raw delivery cannot accumulate
+that drift. This correction requires updating the engine; the integration remains
+0.2.0.

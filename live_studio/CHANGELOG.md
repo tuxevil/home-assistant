@@ -1,3 +1,11 @@
+# 0.2.1 — Wall-clock video timing
+
+- Timestamp incoming raw frames from the real clock and normalize the initial
+  offset before FPS conversion. Scheduler delays no longer slow the output
+  timeline and accumulate video/audio latency.
+- Regression test throttles raw-frame delivery below the configured FPS and
+  checks completion time plus audio/video duration agreement.
+
 # 0.2.0 — Continuous camera selection
 
 - Independent RTSP receivers feed one persistent encoder; camera changes preserve

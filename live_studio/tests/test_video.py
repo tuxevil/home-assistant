@@ -2,6 +2,7 @@
 
 import array
 import asyncio
+import json
 import pathlib
 import shutil
 import subprocess
@@ -212,3 +213,33 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.engine.stop()
         self.assertEqual(self.engine.state, "stopped")
+
+    async def test_delayed_feed_keeps_wall_clock_timeline(self):
+        await self.engine.select("manual", "wide")
+        await self.engine.start("preview", 6)
+        await self.until(lambda: self.engine.process is not None)
+        writer = self.engine.process.stdin
+        original = writer.drain
+
+        async def delayed_drain():
+            await original()
+            await asyncio.sleep(0.18)
+
+        writer.drain = delayed_drain
+        started = time.monotonic()
+        await self.until(lambda: not self.engine.wanted, timeout=16)
+        elapsed = time.monotonic() - started
+        self.assertEqual(self.engine.state, "preview_completed")
+        self.assertLess(elapsed, 9, "Video timeline fell behind wall time")
+        probe = json.loads(
+            await asyncio.to_thread(
+                subprocess.check_output,
+                [
+                    "ffprobe", "-v", "error", "-show_streams", "-of", "json",
+                    str(self.root / "out/preview.mp4"),
+                ],
+                text=True,
+            )
+        )
+        durations = [float(s["duration"]) for s in probe["streams"]]
+        self.assertLess(max(durations) - min(durations), 0.3)

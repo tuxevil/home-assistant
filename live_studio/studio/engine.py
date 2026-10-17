@@ -239,6 +239,7 @@ class Engine:
     def graph(self):
         s = self.settings
         filters = [
+            "setpts=PTS-STARTPTS",
             f"scale={s['width']}:{s['height']}:force_original_aspect_ratio=decrease",
             f"pad={s['width']}:{s['height']}:(ow-iw)/2:(oh-ih)/2",
             "setsar=1",
@@ -279,6 +280,8 @@ class Engine:
             "pipe:1",
             "-thread_queue_size",
             "2",
+            "-use_wallclock_as_timestamps",
+            "1",
             "-f",
             "rawvideo",
             "-pixel_format",
