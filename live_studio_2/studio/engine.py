@@ -304,7 +304,11 @@ class Engine:
                         s, self.overlay, self.font, self.layout_rendered
                     )
                 except ValueError as err:
-                    self.layout_error = str(err) if str(err).startswith("Overlay command rejected:") else "Overlay command rejected"
+                    self.layout_error = (
+                        str(err)
+                        if str(err).startswith("Overlay command rejected:")
+                        else "Overlay command rejected"
+                    )
                 except (OSError, TimeoutError, layout.zmq.ZMQError):
                     # The private command socket may not be ready at startup.
                     # Retain the desired settings and retry without reconnecting.

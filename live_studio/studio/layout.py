@@ -127,10 +127,35 @@ def text_options(name, settings, overlay, font):
             y = (
                 f"h-{height}-th-{my}"
                 if band["position"] == "bottom"
-                else str(height + my)
+                else str(
+                    height
+                    + my
+                    + round(
+                        max(
+                            (
+                                layout[key]["y"] + layout[key]["font_size"]
+                                for key in ("title", "date", "clock")
+                                if layout[key]["visible"]
+                                and layout[key]["anchor"] == "auto"
+                            ),
+                            default=0,
+                        )
+                        * scale
+                    )
+                )
             )
-        if name == "date":
-            x += "-" + str(round(layout["clock"]["font_size"] * scale * 5.8))
+        if (
+            name == "date"
+            and layout["clock"]["visible"]
+            and layout["clock"]["anchor"] == "auto"
+        ):
+            factor = 3.2 if layout["clock"]["format"] == "24h" else 5.0
+            x += "-" + str(
+                round(
+                    (layout["clock"]["x"] + layout["clock"]["font_size"] * factor)
+                    * scale
+                )
+            )
     else:
         vertical, horizontal = element["anchor"].split("_")
         x = {"left": str(mx), "center": f"(w-tw)/2+{mx}", "right": f"w-tw-{mx}"}[
@@ -142,9 +167,9 @@ def text_options(name, settings, overlay, font):
     speed = round(element["speed"] * scale, 3)
     if element["scroll"] != "off" and speed:
         moving = (
-            f"w-mod(t*{speed},w+text_w)"
+            f"w-{mx}-mod(t*{speed},w+text_w)"
             if element["direction"] == "left"
-            else f"-text_w+mod(t*{speed},w+text_w)"
+            else f"-text_w+{mx}+mod(t*{speed},w+text_w)"
         )
         x = (
             moving
@@ -225,6 +250,12 @@ async def update(settings, overlay, font, previous=None):
             await socket.send_string(command)
             reply = await asyncio.wait_for(socket.recv_string(), 2)
             if not reply.startswith("0 "):
-                raise ValueError("Overlay command rejected: " + " ".join(command.split()[:2]) + " (" + reply.split()[0] + ")")
+                raise ValueError(
+                    "Overlay command rejected: "
+                    + " ".join(command.split()[:2])
+                    + " ("
+                    + reply.split()[0]
+                    + ")"
+                )
     finally:
         socket.close()
