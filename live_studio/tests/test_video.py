@@ -237,7 +237,9 @@ class ContinuousVideoTests(unittest.IsolatedAsyncioTestCase):
         await self.until(lambda: not self.engine.wanted, timeout=16)
         elapsed = time.monotonic() - started
         self.assertEqual(self.engine.state, "preview_completed")
-        self.assertLess(elapsed, 9, "Video timeline fell behind wall time")
+        # Includes the injected1.5s pause and FFmpeg's input probing/startup;
+        # the RTMP test below separately verifies steady-state delivery FPS.
+        self.assertLess(elapsed, 12, "Video did not recover after a transient pause")
         probe = json.loads(
             await asyncio.to_thread(
                 subprocess.check_output,
