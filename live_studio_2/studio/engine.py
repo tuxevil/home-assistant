@@ -15,6 +15,8 @@ from .config import atomic_json, validate
 from .director import Director
 from .hardware import select as select_hardware
 from .music import Music
+
+from .process import rawvideo_process
 from .video import VideoHub, snapshot
 
 OVERLAYS = {
@@ -669,7 +671,7 @@ class Engine:
                         await asyncio.sleep(1.1)
                     self.output_id = uuid.uuid4().hex
                     self.output_restarts += 1
-                    self.process = await asyncio.create_subprocess_exec(
+                    self.process = await rawvideo_process(
                         *self.command(listing),
                         stdin=asyncio.subprocess.PIPE,
                         stdout=asyncio.subprocess.PIPE,

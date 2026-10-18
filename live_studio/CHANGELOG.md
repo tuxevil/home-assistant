@@ -1,3 +1,9 @@
+# 0.8.3
+
+- Reduce rawvideo pipe fragmentation with bounded 1 MiB Linux pipes for persistent decoders and encoders.
+- Retain native pipe defaults if the platform or permissions do not allow enlargement.
+- Preserve frame format, pacing, audio clock, and drain timeouts.
+
 # 0.8.2
 
 - Extend bounded feeder recovery to 2.5 seconds: the previous 250 ms window

@@ -5,6 +5,8 @@ import re
 import time
 from collections import deque
 
+from .process import rawvideo_process
+
 
 class FrameBuffer:
     """Play camera PTS against a monotonic clock, bounding latency and memory."""
@@ -156,7 +158,7 @@ class Source:
             try:
                 command = self.command()
                 timestamped = any("showinfo" in x for x in command)
-                self.process = await asyncio.create_subprocess_exec(
+                self.process = await rawvideo_process(
                     *command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
