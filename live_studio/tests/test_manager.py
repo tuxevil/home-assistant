@@ -83,6 +83,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             "Temperature: 20 °C · Humidity: 75 %",
         )
         self.assertEqual(self.manager.get(b["live_id"]).sensor_text, "")
+        self.assertFalse(hasattr(self.manager.get(a["live_id"]).director, "daylight"))
         self.assertEqual(
             (await self.request("GET", "catalog"))["sources"][0]["name"], "Wide"
         )

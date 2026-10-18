@@ -131,12 +131,16 @@ antes de habilitarlo. El botón Comparar vistas permite una consulta manual incl
 con la salida detenida. Las consultas programadas se hacen solo al emitir o grabar
 y con selección automática. La frecuencia y costes dependen del proveedor.
 
-Valores iniciales: comparación cada 10 minutos, ventaja mínima 10 puntos,
-preferencia diurna +5, dos confirmaciones y permanencia mínima 20 minutos. Hay
-entidades numéricas para ajustar estos valores en vivo. El bonus solo se aplica
-con `sun.sun` confirmado sobre el horizonte y metadatos recientes; no se estima
-el movimiento de nubes a partir de una foto. La cámara preferida se elige en las
-opciones. De noche no se aplica ese bonus.
+Valores iniciales: comparación cada 10 minutos, ventaja mínima 10 puntos, dos
+confirmaciones y permanencia mínima 20 minutos. Hay entidades numéricas para
+ajustar estos valores en vivo. Cada live puede asignar una cámara, horario local y
+bonus propios para las franjas de mañana y tarde; se calculan con la zona horaria
+del live, admiten el cruce de medianoche y no dependen de `sun.sun`. Las cifras de
+bonus se exponen como controles HA independientes. Solo afectan a la selección en
+modo Automático; la selección manual prevalece. Por ejemplo, se puede dar +15 a
+Amanecer de 05:00 a 08:00 y +15 a Atardecer de 16:30 a 19:00 en
+America/Guayaquil. La antigua preferencia global por luz diurna se retiró; su
+configuración guardada se ignora durante la migración.
 
 Los resultados caducados, repetidos o posteriores a una selección/configuración
 ya modificada se rechazan. Una cámara sin vídeo confirmado impide el cambio por
@@ -261,3 +265,73 @@ requires passing the runtime rendering tests, not just detecting filter names.
 ## Camera sidebar
 
 See [Camera sidebar](SIDEBAR.md) for runtime controls, dependencies, layout, diagnostics and recovery.
+
+## Sidebar de altura completa y novedades (motor 0.8.0)
+
+El diseño `full_height` divide el canvas 1920×1080: área izquierda de1536px y
+sidebar de384px desde y=0 hasta1080. La cabecera y los cuatro bloques climáticos
+no cruzan la sidebar. El vídeo conserva16:9 con un pequeño letterbox: dentro de la
+región1512×850 se usan1504×846 píxeles alineados a los planos YUV. No se recorta
+ni se sustituye el timestamp integrado por la cámara. Este diseño no genera
+reloj ni fecha propios. Los controles antiguos se conservan para el modo clásico;
+la marquesina horizontal y CTA antiguos quedan ocultos en el diseño completo.
+
+En el editor **Diseño y novedades** de HA se pueden cambiar el diseño, el footer,
+el ancho del panel (320–384px, valores pares), velocidad y anuncios de cada live.
+Los anuncios admiten título, subtítulo, orden, activación y eliminación. Guardar
+actualiza el motor en caliente sin reiniciar FFmpeg, audio ni RTMP. Una lista
+vacía no muestra novedades. Las miniaturas siguen el intervalo configurable
+`sidebar_refresh_seconds` (inicialmente3s); los indicadores sin señal se actualizan
+al detectar la pérdida de frescura. El visor no llama por red desde el feeder.
+
+Tarjeta Lovelace incluida con la integración0.7.0:
+
+```yaml
+type: custom:live-studio-news-card
+entity: sensor.live_studio_engine_status
+```
+
+Elegir la entidad de estado del live que se quiere editar. No copiar el mismo
+entity_id para dos lives. El editor usa la API autenticada existente y exige
+administrador para guardar. Su respuesta no contiene conexiones RTSP, ingest ni
+credenciales. Recargar el navegador después de actualizar la integración.
+
+La configuración equivalente del motor usa las claves existentes y estas nuevas:
+
+```json
+{
+  "studio_presentation": true,
+  "camera_sidebar": true,
+  "broadcast_layout": "full_height",
+  "sidebar_width": 384,
+  "sidebar_refresh_seconds": 3,
+  "weather_footer_enabled": true,
+  "vertical_news": {
+    "enabled": true,
+    "speed_px_s": 25,
+    "messages": [
+      {"id": "welcome", "icon": "radio", "title": "Bienvenidos", "subtitle": "Naturaleza en directo", "enabled": true, "priority": 10}
+    ]
+  }
+}
+```
+
+`vertical_news` reemplaza atómicamente su lista completa al guardarse; se admiten
+hasta32 anuncios, títulos de200 caracteres y subtítulos de800. La velocidad admite
+1–100px/s. El menor valor de `priority` aparece primero. Los textos largos se
+ajustan en varias líneas; las tarjetas tienen altura variable, sin superposición.
+El módulo desplaza planos YUV de abajo arriba y recorta su viewport. El rasterizado
+solo se reconstruye al cambiar contenido o geometría; la fase se conserva al
+cambiar velocidad. El glifo es vectorial portable; `youtube` agrega un triángulo.
+No hay timestamps inventados, enlaces activos ni ejecución del texto.
+
+Para revertir una sola transmisión, guardar `broadcast_layout: classic`. Para
+volver a la cámara a pantalla completa, desactivar el panel de cámaras. Ambas
+operaciones conservan su proceso de salida. La actualización inicial del código
+de un servicio compartido sí requiere reiniciar ese servicio y reconecta todas
+sus salidas. No se modifica la aceleración VA-API, el reloj rawvideo ni ZMQ.
+
+Las métricas `feeder` incluyen mediana/P95 de composición de los últimos5s y
+`skipped_pacing_slots` acumulados. Son retrasos de scheduling del feeder, no un
+contador de paquetes de red perdidos. El contador de FFmpeg/speed puede reflejar
+el promedio desde el arranque; usar también `feed_fps` para evaluar la cadencia.

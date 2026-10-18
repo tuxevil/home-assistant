@@ -21,6 +21,8 @@ class Rail:
     rendered_at: float
     render_ms: float
     main_available: bool = True
+    news: object = None
+    main_label: object = None
 
 
 def _font(size):

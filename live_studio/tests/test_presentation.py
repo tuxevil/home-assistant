@@ -20,13 +20,13 @@ class PresentationTests(unittest.TestCase):
         for i, p in enumerate(_planes(out)):
             f = 1 if i == 0 else 2
             self.assertEqual(
-                int(p[c.main_y // f + 20, c.main_x // f + 20]), (90, 100, 160)[i]
+                int(p[c.main_y // f + 200, c.main_x // f + 400]), (90, 100, 160)[i]
             )
         self.assertNotEqual(out[0], 90)
         self.assertEqual(c.main_w * 9, c.main_h * 16)
         for x, y, w, h in c._cards(4):
             self.assertGreater(x, c.main_x + c.main_w)
-            self.assertEqual(w * 9, h * 16)
+            self.assertLess(abs(w / h - 16 / 9), 0.02)
             self.assertTrue(all(v % 2 == 0 for v in (x, y, w, h)))
         before = bytes(out)
         c.apply(frame(180), rail)
@@ -43,7 +43,7 @@ class PresentationTests(unittest.TestCase):
         self.assertFalse(rail.main_available)
         self.assertEqual(rail.ids, ("c1", "c2"))
         self.assertEqual(len(c.apply(frame(), rail)), 3110400)
-        self.assertEqual(c._cards(2)[0][2:], (352, 198))
+        self.assertEqual(c._cards(2)[0][2:], (360, 204))
 
     def test_real_telemetry_only(self):
         text = "AMB temp: 14.0 °C · AMB humidity: 99.0 % · windspeed: 4.3 km/h · solarradiation: 0.0 W/m² · battery: 80 %"

@@ -98,13 +98,18 @@ def color(value, opacity=100):
 
 def box_options(settings):
     band = settings["overlay_layout"]["band"]
+    full_height = (
+        settings.get("studio_presentation")
+        and settings.get("camera_sidebar")
+        and settings.get("broadcast_layout") == "full_height"
+    )
     height = round(band["height"] * settings["height"] / 1080)
     return dict(
         x="0",
         y="0" if band["position"] == "top" else f"ih-{height}",
         w="iw",
         h=str(height),
-        color=color(band["color"], band["opacity"] if band["visible"] else 0),
+        color=color(band["color"], band["opacity"] if band["visible"] and not full_height else 0),
         t="fill",
     )
 

@@ -2,7 +2,9 @@ import tempfile
 import time
 import unittest
 import uuid
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from studio.config import validate
 from studio.director import Director
@@ -31,10 +33,11 @@ class PolicyTests(unittest.TestCase):
         self.d = Director(Path(self.tmp.name), self.settings["sources"], self.settings)
         self.d.last_switch = time.time() - 1300
 
-    def submit(self, a, b, **updates):
+    def submit(self, a, b, now=None, **updates):
+        now = time.time() if now is None else now
         body = dict(
             comparison_id=uuid.uuid4().hex,
-            observed_at=time.time(),
+            observed_at=now,
             sources_revision="sources",
             selection_revision=self.d.revision,
             scores={
@@ -43,7 +46,9 @@ class PolicyTests(unittest.TestCase):
             },
         )
         body.update(updates)
-        self.d.comparison(body, {"wide": True, "zoom": True}, True, "sources")
+        self.d.comparison(
+            body, {"wide": True, "zoom": True}, True, "sources", now=now
+        )
         return body
 
     def test_two_confirmations(self):
@@ -52,27 +57,62 @@ class PolicyTests(unittest.TestCase):
         self.submit(60, 74)
         self.assertEqual(self.d.active, "zoom")
 
-    def test_day_bonus_and_night_neutral(self):
-        self.d.select("manual", "zoom")
-        self.d.select("automatic")
-        self.d.last_switch = time.time() - 1300
-        self.d.daylight = True
-        self.d.daylight_at = time.monotonic()
-        self.submit(66, 60)
-        self.submit(66, 60)
-        self.assertEqual(self.d.active, "wide")
-        self.d.select("manual", "zoom")
-        self.d.select("automatic")
-        self.d.last_switch = time.time() - 1300
-        self.d.daylight = False
-        self.submit(66, 60)
-        self.submit(66, 60)
-        self.assertEqual(self.d.active, "zoom")
+    def test_retired_global_daylight_bonus_is_ignored(self):
+        legacy = validate(
+            {
+                "sources": self.settings["sources"],
+                "preferred_camera": "wide",
+                "day_bonus": 15,
+            }
+        )
+        self.assertNotIn("preferred_camera", legacy)
+        self.assertNotIn("day_bonus", legacy)
+        self.d.result = {"wide": {"score": 66}, "zoom": {"score": 60}}
+        self.assertEqual(self.d.scores(), {"wide": 66, "zoom": 60})
+        self.assertNotIn("applied_day_bonus", self.d.status_dict())
 
-    def test_stale_daylight_has_no_bonus(self):
-        self.d.daylight = True
-        self.d.daylight_at = time.monotonic() - 121
-        self.assertEqual(self.d.bonus, 0)
+    def test_morning_and_evening_preferences_use_live_timezone_and_half_open_windows(self):
+        self.d.settings.update(
+            timezone="America/Guayaquil",
+            morning_camera="zoom",
+            morning_start="05:00",
+            morning_end="08:00",
+            morning_bonus=15,
+            evening_camera="wide",
+            evening_start="16:30",
+            evening_end="19:00",
+            evening_bonus=12,
+        )
+        at = lambda hour, minute=0: datetime(
+            2026, 6, 1, hour, minute, tzinfo=ZoneInfo("America/Guayaquil")
+        ).timestamp()
+        self.assertEqual(self.d.time_bonuses(at(4, 59)), {})
+        self.assertEqual(self.d.time_bonuses(at(5)), {"zoom": 15})
+        self.assertEqual(self.d.time_bonuses(at(7, 59)), {"zoom": 15})
+        self.assertEqual(self.d.time_bonuses(at(8)), {})
+        self.assertEqual(self.d.time_bonuses(at(16, 29)), {})
+        self.assertEqual(self.d.time_bonuses(at(16, 30)), {"wide": 12})
+        self.assertEqual(self.d.time_bonuses(at(18, 59)), {"wide": 12})
+        self.assertEqual(self.d.time_bonuses(at(19)), {})
+
+    def test_morning_preference_can_change_automatic_selection(self):
+        now = datetime(
+            2026, 6, 1, 5, 30, tzinfo=ZoneInfo("America/Guayaquil")
+        ).timestamp()
+        self.d.settings.update(
+            timezone="America/Guayaquil",
+            morning_camera="zoom",
+            morning_start="05:00",
+            morning_end="08:00",
+            morning_bonus=15,
+            minimum_margin=5,
+            confirmations=1,
+            minimum_dwell=0,
+        )
+        self.d.last_switch = now - 1
+        self.submit(60, 55, now=now)
+        self.assertEqual(self.d.active, "zoom")
+        self.assertEqual(self.d.status, "selected")
 
     def test_dwell_and_manual_override(self):
         self.d.last_switch = time.time()
@@ -176,3 +216,30 @@ class PolicyTests(unittest.TestCase):
         ]:
             with self.assertRaises(ValueError):
                 validate(patch)
+
+    def test_timed_preference_target_validation_and_removal(self):
+        base = validate(
+            {
+                "sources": [
+                    {
+                        "id": "wide",
+                        "name": "Wide",
+                        "rtsp_url": "rtsp://camera.invalid/wide",
+                    },
+                    {
+                        "id": "zoom",
+                        "name": "Zoom",
+                        "rtsp_url": "rtsp://camera.invalid/zoom",
+                    },
+                ],
+                "morning_camera": "zoom",
+            }
+        )
+        with self.assertRaises(ValueError):
+            validate({"morning_camera": "missing"}, base)
+        with self.assertRaises(ValueError):
+            validate({"morning_start": "25:00"}, base)
+        with self.assertRaises(ValueError):
+            validate({"evening_start": "16:30", "evening_end": "16:30"}, base)
+        remaining = validate({"sources": [base["sources"][0]]}, base)
+        self.assertEqual(remaining["morning_camera"], "")

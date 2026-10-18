@@ -82,11 +82,10 @@ async def create_app(data=None, media=None, options=None):
             or set(body) - {"sensor_text", "daylight"}
         ):
             raise ValueError()
+        # Older integrations still send this retired field; accept and ignore it.
         daylight = body.get("daylight")
         if daylight is not None and type(daylight) is not bool:
             raise ValueError("Invalid daylight")
-        engine.director.daylight = daylight
-        engine.director.daylight_at = asyncio.get_running_loop().time()
         engine.sensor_text = clean_text(body["sensor_text"], 1000)
         engine.sensor_updated = asyncio.get_running_loop().time()
         return web.json_response({"ok": True})

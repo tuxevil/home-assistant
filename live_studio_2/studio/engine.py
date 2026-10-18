@@ -32,6 +32,10 @@ OVERLAYS = {
 
 
 SIDEBAR = {
+    "broadcast_layout",
+    "sidebar_width",
+    "weather_footer_enabled",
+    "vertical_news",
     "camera_sidebar",
     "sidebar_refresh_seconds",
     "studio_presentation",
@@ -42,11 +46,18 @@ SIDEBAR = {
 
 POLICY = {
     "minimum_margin",
-    "day_bonus",
+    "morning_camera",
+    "morning_start",
+    "morning_end",
+    "morning_bonus",
+    "evening_camera",
+    "evening_start",
+    "evening_end",
+    "evening_bonus",
     "minimum_dwell",
     "confirmations",
     "comparison_interval",
-    "preferred_camera",
+    "timezone",
 }
 
 
@@ -205,7 +216,10 @@ class Engine:
         )
         sources_changed = self.settings["sources"] != settings["sources"]
         policy_changed = any(self.settings[k] != settings[k] for k in POLICY)
-        if self.settings["overlay_layout"] != settings["overlay_layout"]:
+        if self.settings["overlay_layout"] != settings["overlay_layout"] or any(
+            self.settings.get(key) != settings.get(key)
+            for key in ("broadcast_layout", "studio_presentation", "camera_sidebar")
+        ):
             self.layout_error = None
             self.layout_revision += 1
             self.layout_pending = bool(self.wanted)
@@ -326,6 +340,7 @@ class Engine:
             )
             if self.hub:
                 self.hub.presentation_context = {
+                    "settings": dict(s),
                     "sensor_text": values["sensor"],
                     "timezone": s["timezone"],
                     "cta": values["cta"]

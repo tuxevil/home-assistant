@@ -8,13 +8,20 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .layout import validate_layout
+from .news import validate_news
 
 DEFAULTS = dict(
     rtsp_url="",
     sources=[],
-    preferred_camera="",
     minimum_margin=10,
-    day_bonus=5,
+    morning_camera="",
+    morning_start="05:00",
+    morning_end="08:00",
+    morning_bonus=0,
+    evening_camera="",
+    evening_start="16:30",
+    evening_end="19:00",
+    evening_bonus=0,
     minimum_dwell=1200,
     confirmations=2,
     comparison_interval=600,
@@ -31,10 +38,14 @@ DEFAULTS = dict(
     source_buffer_ms=250,
     camera_sidebar=False,
     studio_presentation=False,
+    broadcast_layout="classic",
     broadcast_brand="LIVE STUDIO",
     broadcast_location="",
     broadcast_label="NATURALEZA EN DIRECTO",
     sidebar_refresh_seconds=3,
+    sidebar_width=384,
+    weather_footer_enabled=True,
+    vertical_news={"enabled": False, "speed_px_s": 25, "messages": []},
     bitrate_kbps=3000,
     threads=2,
     title="Live Studio",
@@ -57,7 +68,8 @@ TEXT_LIMITS = {
 }
 NUMBERS = {
     "minimum_margin": (1, 30),
-    "day_bonus": (0, 15),
+    "morning_bonus": (0, 15),
+    "evening_bonus": (0, 15),
     "minimum_dwell": (0, 7200),
     "confirmations": (1, 5),
     "comparison_interval": (60, 3600),
@@ -66,6 +78,7 @@ NUMBERS = {
     "fps": (5, 30),
     "source_buffer_ms": (0, 2000),
     "sidebar_refresh_seconds": (2, 30),
+    "sidebar_width": (320, 384),
     "bitrate_kbps": (500, 15000),
     "threads": (1, 8),
     "cta_period": (60, 7200),
@@ -79,6 +92,15 @@ def clean_text(value, limit=300):
     return " ".join(
         "".join(c for c in value if c.isprintable() or c.isspace()).split()
     )[:limit]
+
+
+def local_time(value):
+    if not isinstance(value, str):
+        raise ValueError("Invalid local time")
+    match = re.fullmatch(r"([01][0-9]|2[0-3]):([0-5][0-9])(?::[0-5][0-9])?", value)
+    if not match:
+        raise ValueError("Invalid local time")
+    return f"{match.group(1)}:{match.group(2)}"
 
 
 def validate_sources(values):
@@ -136,6 +158,12 @@ def validate_sources(values):
 
 
 def validate(values, base=None):
+    # Retire the former all-day daylight preference without breaking existing
+    # settings files or an older integration that may still submit these keys.
+    legacy = {"day_bonus", "preferred_camera"}
+    if isinstance(values, dict):
+        values = {key: value for key, value in values.items() if key not in legacy}
+    base = {k: v for k, v in (base or {}).items() if k not in legacy}
     if not isinstance(values, dict) or values.keys() - DEFAULTS.keys():
         raise ValueError("Unknown configuration fields")
     result = {**DEFAULTS, **(base or {})}
@@ -147,6 +175,11 @@ def validate(values, base=None):
             continue
         if key == "sources":
             value = validate_sources(value)
+        elif key == "broadcast_layout":
+            if value not in ("classic", "full_height"):
+                raise ValueError("Invalid broadcast layout")
+        elif key == "vertical_news":
+            value = validate_news(value)
         elif key in ("video_encoder", "video_decoder"):
             if value not in ("cpu", "vaapi", "auto"):
                 raise ValueError("Invalid video acceleration")
@@ -158,9 +191,11 @@ def validate(values, base=None):
                 )
             ):
                 raise ValueError("Invalid render device")
-        elif key == "preferred_camera":
+        elif key in ("morning_camera", "evening_camera"):
             if not isinstance(value, str):
                 raise ValueError("Invalid preferred camera")
+        elif key in ("morning_start", "morning_end", "evening_start", "evening_end"):
+            value = local_time(value)
         elif key in NUMBERS:
             lo, hi = NUMBERS[key]
             if type(value) is not int or not lo <= value <= hi:
@@ -172,6 +207,7 @@ def validate(values, base=None):
             "show_camera_name",
             "camera_sidebar",
             "studio_presentation",
+            "weather_footer_enabled",
         ):
             if type(value) is not bool:
                 raise ValueError("Invalid show_clock")
@@ -227,9 +263,18 @@ def validate(values, base=None):
     result["sources"] = validate_sources(result["sources"])
     result["rtsp_url"] = result["sources"][0]["rtsp_url"] if result["sources"] else ""
     ids = [x["id"] for x in result["sources"]]
-    if result["preferred_camera"] not in ids:
-        result["preferred_camera"] = ids[0] if ids else ""
-    if result["width"] % 2 or result["height"] % 2:
+    for period in ("morning", "evening"):
+        camera_key = f"{period}_camera"
+        if result[camera_key] and result[camera_key] not in ids:
+            if camera_key in values:
+                raise ValueError("Unknown timed preference camera")
+            result[camera_key] = ""
+        start_key, end_key = f"{period}_start", f"{period}_end"
+        result[start_key] = local_time(result[start_key])
+        result[end_key] = local_time(result[end_key])
+        if result[start_key] == result[end_key]:
+            raise ValueError("Timed preference start and end must differ")
+    if result["width"] % 2 or result["height"] % 2 or result["sidebar_width"] % 2:
         raise ValueError("Video dimensions must be even")
     if result["cta_duration"] >= result["cta_period"]:
         raise ValueError("CTA duration must be less than period")

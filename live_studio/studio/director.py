@@ -3,6 +3,8 @@
 import math
 import time
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from .config import atomic_json, clean_text
 
@@ -42,8 +44,6 @@ class Director:
         self.seen = []
         self.failures = 0
         self.status = "waiting"
-        self.daylight = None
-        self.daylight_at = 0
 
     def reset(self):
         self.candidate = None
@@ -75,20 +75,43 @@ class Director:
         self.reset()
         self.persist()
 
-    @property
-    def bonus(self):
-        return (
-            self.settings["day_bonus"]
-            if self.daylight is True and time.monotonic() - self.daylight_at < 120
-            else 0
-        )
+    def active_time_preferences(self, now=None):
+        timestamp = time.time() if now is None else now
+        try:
+            local = datetime.fromtimestamp(
+                timestamp, ZoneInfo(self.settings.get("timezone", "UTC"))
+            ).time()
+        except (OverflowError, OSError, ValueError):
+            local = datetime.fromtimestamp(timestamp, ZoneInfo("UTC")).time()
+        active = []
+        for period in ("morning", "evening"):
+            camera = self.settings.get(f"{period}_camera", "")
+            bonus = self.settings.get(f"{period}_bonus", 0)
+            if not camera or bonus <= 0:
+                continue
+            start = datetime.strptime(
+                self.settings[f"{period}_start"], "%H:%M"
+            ).time()
+            end = datetime.strptime(self.settings[f"{period}_end"], "%H:%M").time()
+            in_window = (
+                start <= local < end
+                if start < end
+                else local >= start or local < end
+            )
+            if in_window:
+                active.append({"period": period, "camera_id": camera, "bonus": bonus})
+        return active
 
-    def scores(self):
-        preferred = self.settings["preferred_camera"]
-        return {
-            c: v["score"] + (self.bonus if c == preferred else 0)
-            for c, v in self.result.items()
-        }
+    def time_bonuses(self, now=None):
+        result = {}
+        for preference in self.active_time_preferences(now):
+            camera = preference["camera_id"]
+            result[camera] = result.get(camera, 0) + preference["bonus"]
+        return result
+
+    def scores(self, now=None):
+        timed = self.time_bonuses(now)
+        return {c: v["score"] + timed.get(c, 0) for c, v in self.result.items()}
 
     def health_tick(self, healthy):
         if healthy.get(self.active):
@@ -169,7 +192,7 @@ class Director:
             self.reset()
             self.status = "no_detail"
             return
-        scores = self.scores()
+        scores = self.scores(now)
         best = max(usable, key=lambda c: scores[c])
         if (
             self.active in usable
@@ -202,6 +225,7 @@ class Director:
             comparison=self.result,
             compared_at=self.compared_at,
             effective_scores=self.scores(),
-            applied_day_bonus=self.bonus,
+            active_time_preferences=self.active_time_preferences(),
+            applied_time_bonuses=self.time_bonuses(),
             decision=self.status,
         )

@@ -1,3 +1,14 @@
+# 0.8.0
+
+- Optional full-height camera sidebar, left-only header and real weather footer.
+- Cached planar vertical news ticker with live announcements and speed updates.
+- Preserve classic layout for per-live rollback; expose bounded feeder percentiles.
+
+# 0.7.2
+
+- Apply per-live morning and evening camera bonuses in configurable local-time windows.
+- Retire the former global daylight preference; ignore its legacy saved settings.
+
 # 0.7.1
 
 - Continue automatic camera selection among currently healthy views when another source is offline; never select a disconnected view from an old score.

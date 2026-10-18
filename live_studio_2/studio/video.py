@@ -288,7 +288,10 @@ class VideoHub:
             return
         try:
             if self.settings.get("studio_presentation"):
-                from .presentation import StudioComposer
+                if self.settings.get("broadcast_layout") == "full_height":
+                    from .presentation import StudioComposer
+                else:
+                    from .legacy_presentation import StudioComposer
 
                 self.sidebar = StudioComposer(
                     self.settings["width"], self.settings["height"], self.settings
@@ -310,12 +313,16 @@ class VideoHub:
             for key in (
                 "camera_sidebar",
                 "studio_presentation",
+                "broadcast_layout",
                 "broadcast_brand",
                 "broadcast_location",
                 "broadcast_label",
+                "sidebar_width",
             )
         )
         self.settings = settings
+        if self.sidebar and self.settings.get("studio_presentation"):
+            self.sidebar.settings = dict(settings)
         if changed or (settings.get("camera_sidebar") and self.sidebar_task is None):
             await self._stop_sidebar()
             self.sidebar = None
@@ -469,6 +476,8 @@ class VideoHub:
         longest_block = 0
         previous = None
         compose_total = compose_max = write_total = write_max = drain_total = 0.0
+        compose_samples = deque(maxlen=512)
+        skipped_slots = 0
         try:
             while process.returncode is None:
                 now = time.monotonic()
@@ -488,6 +497,7 @@ class VideoHub:
                 compose_elapsed = time.perf_counter() - compose_at
                 compose_total += compose_elapsed
                 compose_max = max(compose_max, compose_elapsed)
+                compose_samples.append(compose_elapsed * 1000)
                 write_at = time.perf_counter()
                 process.stdin.write(composed)
                 write_elapsed = time.perf_counter() - write_at
@@ -504,6 +514,9 @@ class VideoHub:
                     self.selected_frame_fps = round(changed / elapsed, 2)
                     self.feed_max_block_seconds = round(longest_block, 3)
                     self.feeder_metrics = dict(
+                        compose_median_ms=round(sorted(compose_samples)[len(compose_samples) // 2], 3),
+                        compose_p95_ms=round(sorted(compose_samples)[int((len(compose_samples) - 1) * 0.95)], 3),
+                        skipped_pacing_slots=skipped_slots,
                         compose_mean_ms=round(compose_total / sent * 1000, 3),
                         compose_max_ms=round(compose_max * 1000, 3),
                         write_mean_ms=round(write_total / sent * 1000, 3),
@@ -517,10 +530,12 @@ class VideoHub:
                     report_at = time.monotonic()
                     sent = changed = 0
                     longest_block = 0
+                    compose_samples.clear()
                 self.written += 1
                 due += period
                 # Drop missed wall-clock slots instead of sending a catch-up burst.
                 if due < time.monotonic() - period:
+                    skipped_slots += max(1, int((time.monotonic() - due) / period))
                     due = time.monotonic()
                 await asyncio.sleep(max(0, due - time.monotonic()))
         except (BrokenPipeError, ConnectionResetError):
