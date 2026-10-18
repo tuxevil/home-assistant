@@ -31,6 +31,8 @@ OVERLAYS = {
 }
 
 
+SIDEBAR = {"camera_sidebar", "sidebar_refresh_seconds"}
+
 POLICY = {
     "minimum_margin",
     "day_bonus",
@@ -148,6 +150,8 @@ class Engine:
             output_restarts=self.output_restarts,
             camera_switches=self.hub.switches if self.hub else 0,
             feed_fps=self.hub.feed_fps if self.hub else None,
+            sidebar=self.hub.sidebar_status() if self.hub else None,
+            feeder=dict(self.hub.feeder_metrics) if self.hub else None,
             selected_frame_fps=self.hub.selected_frame_fps if self.hub else None,
             feed_max_block_seconds=(
                 self.hub.feed_max_block_seconds if self.hub else None
@@ -182,7 +186,7 @@ class Engine:
     async def configure(self, patch):
         if "destination_url" in patch:
             raise ValueError("Set destination in the companion options")
-        if self.wanted and set(patch) - OVERLAYS - POLICY - {"sources"}:
+        if self.wanted and set(patch) - OVERLAYS - POLICY - SIDEBAR - {"sources"}:
             raise ValueError("Stop the output before changing video settings")
         settings = validate(patch, self.settings)
         if self.wanted and "sources" in patch and not settings["sources"]:
@@ -222,7 +226,9 @@ class Engine:
             self.director.persist()
             if self.hub:
                 await self.hub.reconfigure(settings)
-        elif policy_changed:
+        elif self.hub and set(patch) & SIDEBAR:
+            await self.hub.configure_sidebar(settings)
+        if policy_changed:
             self.director.reset()
             self.director.revision = uuid.uuid4().hex
 
@@ -257,14 +263,16 @@ class Engine:
             raise ValueError("No camera selected")
         async with self.snapshot_lock:
             graph = (
-                f"setpts=PTS+{max(0, time.monotonic()-self.anchor):.3f}/TB,"
+                f"setpts=PTS+{max(0, time.monotonic() - self.anchor):.3f}/TB,"
                 + ",".join(
                     layout.filters(
                         self.settings, self.overlay, self.font, runtime=False
                     )
                 )
             )
-            return await snapshot(source, self.settings, self.hub, graph=graph)
+            return await snapshot(
+                source, self.settings, self.hub, graph=graph, composed=True
+            )
 
     async def texts(self):
         while True:

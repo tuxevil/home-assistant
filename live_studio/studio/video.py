@@ -241,6 +241,18 @@ class VideoHub:
         self.feed_fps = None
         self.selected_frame_fps = None
         self.feed_max_block_seconds = None
+        self.sidebar = None
+        self.sidebar_task = None
+        self.sidebar_worker = None
+        self.sidebar_rail = None
+        self.sidebar_error = None
+        self.sidebar_updates = 0
+        self.sidebar_membership = tuple(
+            (s["id"], s["name"]) for s in settings["sources"]
+        )
+        self.stopping = False
+        self.feeder_metrics = {}
+        self._configure_sidebar()
 
     async def reconfigure(self, settings):
         """Replace only changed decoders; keep the encoder and audio alive."""
@@ -264,17 +276,152 @@ class VideoHub:
             if sources.get(key) is not source
         ]
         self.sources = sources
-        self.settings = settings
+        self.sidebar_membership = tuple(
+            (s["id"], s["name"]) for s in settings["sources"]
+        )
+        await self.configure_sidebar(settings)
         await asyncio.gather(*(source.stop() for source in removed))
+
+    def _configure_sidebar(self):
+        if not self.settings.get("camera_sidebar"):
+            return
+        try:
+            from .sidebar import CameraSidebar
+
+            self.sidebar = CameraSidebar(
+                self.settings["width"], self.settings["height"]
+            )
+        except Exception:
+            self.sidebar_error = (
+                "Camera sidebar unavailable; check dimensions and optional dependencies"
+            )
+
+    async def configure_sidebar(self, settings):
+        changed = self.settings.get("camera_sidebar") != settings.get("camera_sidebar")
+        self.settings = settings
+        if changed or (settings.get("camera_sidebar") and self.sidebar_task is None):
+            await self._stop_sidebar()
+            self.sidebar = None
+            self.sidebar_rail = None
+            self.sidebar_error = None
+            self._configure_sidebar()
+            if self.sidebar and not self.stopping:
+                self.sidebar_task = asyncio.create_task(self.refresh_sidebar())
+
+    async def _stop_sidebar(self):
+        if self.sidebar_task:
+            self.sidebar_task.cancel()
+            await asyncio.gather(self.sidebar_task, return_exceptions=True)
+            self.sidebar_task = None
+        # Cancellation of to_thread does not stop its thread. render has no
+        # access to the published rail; join its finite work before releasing.
+        if self.sidebar_worker:
+            await asyncio.gather(self.sidebar_worker, return_exceptions=True)
+            self.sidebar_worker = None
+
+    async def refresh_sidebar(self):
+        try:
+            while not self.stopping and self.sidebar is not None:
+                active = self.director.active
+                membership = self.sidebar_membership
+                entries = [
+                    (
+                        key,
+                        name,
+                        self.sources[key].frame
+                        if key in self.sources and self.sources[key].healthy
+                        else None,
+                    )
+                    for key, name in membership
+                ]
+                self.sidebar_worker = asyncio.create_task(
+                    asyncio.to_thread(self.sidebar.render, entries, active)
+                )
+                rail = await asyncio.shield(self.sidebar_worker)
+                self.sidebar_worker = None
+                # Discard late work following a source/selection change.
+                if (
+                    active == self.director.active
+                    and membership == self.sidebar_membership
+                ):
+                    self.sidebar_rail = rail
+                    self.sidebar_updates += 1
+                refresh_at = time.monotonic() + self.settings.get(
+                    "sidebar_refresh_seconds", 3
+                )
+                while (
+                    not self.stopping
+                    and self.director.active == active
+                    and membership == self.sidebar_membership
+                    and time.monotonic() < refresh_at
+                ):
+                    await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.sidebar_error = (
+                "Camera sidebar refresh failed; original video preserved"
+            )
+            self.sidebar = None
+            self.sidebar_rail = None
+
+    def compose(self, frame):
+        rail = self.sidebar_rail
+        if self.sidebar is None or rail is None:
+            return frame
+        # Never display the previous camera list (including a duplicate of the
+        # newly selected main view) while its replacement renders in the worker.
+        if (
+            rail.active != self.director.active
+            or rail.membership != self.sidebar_membership
+        ):
+            return frame
+        if time.monotonic() - rail.rendered_at > max(
+            10, self.settings.get("sidebar_refresh_seconds", 3) * 2
+        ):
+            return frame
+        try:
+            result = self.sidebar.apply(frame, rail)
+            if len(result) != len(frame):
+                raise ValueError("Invalid composed frame")
+            return result
+        except Exception:
+            self.sidebar_error = (
+                "Camera sidebar composition failed; original video preserved"
+            )
+            self.sidebar = None
+            self.sidebar_rail = None
+            return frame
+
+    def sidebar_status(self):
+        rail = self.sidebar_rail
+        return dict(
+            enabled=self.settings.get("camera_sidebar", False),
+            active=bool(self.sidebar and rail and rail.active == self.director.active),
+            error=self.sidebar_error,
+            updates=self.sidebar_updates,
+            refresh_seconds=self.settings.get("sidebar_refresh_seconds", 3),
+            render_ms=round(rail.render_ms, 3) if rail else None,
+            age_seconds=round(time.monotonic() - rail.rendered_at, 3) if rail else None,
+            camera_ids=list(rail.ids) if rail else [],
+            healthy=list(rail.healthy) if rail else [],
+        )
 
     def healthy(self):
         return {key: source.healthy for key, source in self.sources.items()}
 
     async def start(self):
+        self.stopping = False
+        if self.sidebar and self.sidebar_task is None:
+            self.sidebar_task = asyncio.create_task(self.refresh_sidebar())
         for source in self.sources.values():
             source.task = asyncio.create_task(source.receive())
 
     async def stop(self):
+        self.stopping = True
+        await self._stop_sidebar()
+        self.sidebar_rail = None
+        self.sidebar = None
         await asyncio.gather(*(s.stop() for s in self.sources.values()))
 
     def current_frame(self):
@@ -293,6 +440,7 @@ class VideoHub:
         sent = changed = 0
         longest_block = 0
         previous = None
+        compose_total = compose_max = write_total = write_max = drain_total = 0.0
         try:
             while process.returncode is None:
                 now = time.monotonic()
@@ -307,15 +455,37 @@ class VideoHub:
                 sent += 1
                 changed += int(frame is not previous)
                 previous = frame
-                process.stdin.write(frame)
+                compose_at = time.perf_counter()
+                composed = self.compose(frame)
+                compose_elapsed = time.perf_counter() - compose_at
+                compose_total += compose_elapsed
+                compose_max = max(compose_max, compose_elapsed)
+                write_at = time.perf_counter()
+                process.stdin.write(composed)
+                write_elapsed = time.perf_counter() - write_at
+                write_total += write_elapsed
+                write_max = max(write_max, write_elapsed)
                 wait_at = time.monotonic()
                 await asyncio.wait_for(process.stdin.drain(), 8)
-                longest_block = max(longest_block, time.monotonic() - wait_at)
+                drain_elapsed = time.monotonic() - wait_at
+                drain_total += drain_elapsed
+                longest_block = max(longest_block, drain_elapsed)
                 elapsed = time.monotonic() - report_at
                 if elapsed >= 5:
                     self.feed_fps = round(sent / elapsed, 2)
                     self.selected_frame_fps = round(changed / elapsed, 2)
                     self.feed_max_block_seconds = round(longest_block, 3)
+                    self.feeder_metrics = dict(
+                        compose_mean_ms=round(compose_total / sent * 1000, 3),
+                        compose_max_ms=round(compose_max * 1000, 3),
+                        write_mean_ms=round(write_total / sent * 1000, 3),
+                        write_max_ms=round(write_max * 1000, 3),
+                        drain_mean_ms=round(drain_total / sent * 1000, 3),
+                        drain_max_ms=round(longest_block * 1000, 3),
+                    )
+                    compose_total = compose_max = write_total = write_max = (
+                        drain_total
+                    ) = 0.0
                     report_at = time.monotonic()
                     sent = changed = 0
                     longest_block = 0
@@ -362,7 +532,7 @@ class VideoHub:
         }
 
 
-async def snapshot(source, settings, hub=None, graph=""):
+async def snapshot(source, settings, hub=None, graph="", composed=False):
     """Return a fresh JPEG or fail; never serve a cached last frame as live."""
     current = hub.sources.get(source["id"]) if hub else None
     if hub and (not current or not current.healthy):
@@ -382,7 +552,7 @@ async def snapshot(source, settings, hub=None, graph=""):
             "-i",
             "pipe:0",
         ]
-        frame = current.frame
+        frame = hub.compose(hub.current_frame()) if composed else current.frame
     else:
         command = [
             "ffmpeg",

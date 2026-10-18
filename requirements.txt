@@ -1,2 +1,4 @@
 aiohttp>=3.10,<4
 pyzmq>=26,<28
+numpy>=1.24,<3
+Pillow>=10,<13

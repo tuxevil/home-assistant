@@ -257,3 +257,7 @@ The bundled app uses Debian13 and FFmpeg7, matching the reference external
 Linux deployment. FFmpeg8 packages that terminate during live `drawtext`
 resizing are not supported for this feature; changing to a newer major version
 requires passing the runtime rendering tests, not just detecting filter names.
+
+## Camera sidebar
+
+See [Camera sidebar](SIDEBAR.md) for runtime controls, dependencies, layout, diagnostics and recovery.

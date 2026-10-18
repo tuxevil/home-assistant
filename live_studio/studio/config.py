@@ -29,6 +29,8 @@ DEFAULTS = dict(
     video_decoder="cpu",
     vaapi_device="",
     source_buffer_ms=250,
+    camera_sidebar=False,
+    sidebar_refresh_seconds=3,
     bitrate_kbps=3000,
     threads=2,
     title="Live Studio",
@@ -51,6 +53,7 @@ NUMBERS = {
     "height": (360, 2160),
     "fps": (5, 30),
     "source_buffer_ms": (0, 2000),
+    "sidebar_refresh_seconds": (2, 30),
     "bitrate_kbps": (500, 15000),
     "threads": (1, 8),
     "cta_period": (60, 7200),
@@ -152,7 +155,7 @@ def validate(values, base=None):
                 raise ValueError("Invalid " + key)
         elif key in TEXT_LIMITS:
             value = clean_text(value, TEXT_LIMITS[key])
-        elif key in ("show_clock", "show_camera_name"):
+        elif key in ("show_clock", "show_camera_name", "camera_sidebar"):
             if type(value) is not bool:
                 raise ValueError("Invalid show_clock")
         elif key == "timezone":

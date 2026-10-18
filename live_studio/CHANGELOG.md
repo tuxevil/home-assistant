@@ -1,3 +1,9 @@
+# 0.6.0
+
+- Optional per-live camera sidebar with cached YUV thumbnails, runtime bypass and feeder metrics.
+- Reuse existing decoded camera buffers; preserve encoder/audio/RTMP and ZMQ overlays.
+- Composed overlay snapshots and cancellation/stale-result regression tests.
+
 ## 0.5.1
 
 - Add or remove per-live cameras while streaming, retaining unchanged decoders,
