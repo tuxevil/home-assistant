@@ -1,3 +1,11 @@
+# 0.8.1
+
+- Recover up to 250 ms of brief feeder scheduling/backpressure delays before
+  discarding pacing debt, preserving rawvideo media time during minor stalls.
+- Keep long-stall recovery bounded and preserve the eight-second drain timeout.
+- Add deterministic tests of the real feeder for repeated jitter, long stalls,
+  raw frame size and timeout cleanup; retain A/V and slow-RTMP regressions.
+
 # 0.8.0
 
 - Optional full-height camera sidebar, left-only header and real weather footer.

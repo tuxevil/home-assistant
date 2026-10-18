@@ -533,8 +533,9 @@ class VideoHub:
                     compose_samples.clear()
                 self.written += 1
                 due += period
-                # Drop missed wall-clock slots instead of sending a catch-up burst.
-                if due < time.monotonic() - period:
+                # Recover brief scheduling/backpressure stalls without losing rawvideo
+                # media time. Bound catch-up debt so long stalls cannot build latency.
+                if due < time.monotonic() - max(0.25, period * 2):
                     skipped_slots += max(1, int((time.monotonic() - due) / period))
                     due = time.monotonic()
                 await asyncio.sleep(max(0, due - time.monotonic()))
