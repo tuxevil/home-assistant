@@ -467,7 +467,7 @@ class VideoHub:
             else self.blank
         )
 
-    async def feed(self, process):
+    async def feed(self, process, output_ready=None):
         period = 1 / self.settings["fps"]
         due = time.monotonic()
         health_at = due
@@ -478,6 +478,7 @@ class VideoHub:
         compose_total = compose_max = write_total = write_max = drain_total = 0.0
         compose_samples = deque(maxlen=512)
         skipped_slots = 0
+        was_ready = output_ready is None or output_ready()
         try:
             while process.returncode is None:
                 now = time.monotonic()
@@ -532,10 +533,18 @@ class VideoHub:
                     longest_block = 0
                     compose_samples.clear()
                 self.written += 1
+                ready = output_ready is None or output_ready()
+                if ready and not was_ready:
+                    # Start the live schedule at first encoded progress, never
+                    # replay connection/probing time as a burst of repeated views.
+                    due = time.monotonic()
+                was_ready = ready
                 due += period
-                # Recover brief scheduling/backpressure stalls without losing rawvideo
-                # media time. Bound catch-up debt so long stalls cannot build latency.
-                if due < time.monotonic() - max(0.25, period * 2):
+                # Before the first encoded frame, connection/probing time is not
+                # live media debt. Afterwards, absorb bounded output stalls without
+                # permanently discarding rawvideo time or building unlimited latency.
+                recovery = 2.5 if ready else 0.25
+                if due < time.monotonic() - max(recovery, period * 2):
                     skipped_slots += max(1, int((time.monotonic() - due) / period))
                     due = time.monotonic()
                 await asyncio.sleep(max(0, due - time.monotonic()))

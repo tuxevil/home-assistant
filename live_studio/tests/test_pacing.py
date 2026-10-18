@@ -20,7 +20,7 @@ class Clock:
 
 
 class PacingTests(unittest.IsolatedAsyncioTestCase):
-    async def feed(self, pauses=None, timeout=False):
+    async def feed(self, pauses=None, timeout=False, startup=False, ready_after=None):
         clock = Clock()
         director = types.SimpleNamespace(active="fixture", health_tick=lambda _: None)
         hub = VideoHub(
@@ -70,7 +70,11 @@ class PacingTests(unittest.IsolatedAsyncioTestCase):
             asyncio=types.SimpleNamespace(wait_for=wait_for, sleep=clock.sleep),
         )
         feed = types.FunctionType(VideoHub.feed.__code__, dependencies)
-        await feed(hub, process)
+        ready = (
+            (lambda: counts["frames"] >= ready_after) if ready_after is not None
+            else (lambda: counts["frames"] > 30) if startup else (lambda: True)
+        )
+        await feed(hub, process, ready)
         self.assertTrue(counts["closed"])
         self.assertTrue(seen_timeouts)
         self.assertEqual(set(seen_timeouts), {8})
@@ -84,11 +88,37 @@ class PacingTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(elapsed, 10.0, places=5)
         self.assertEqual(hub.feeder_metrics["skipped_pacing_slots"], 0)
 
-    async def test_long_stall_discards_excessive_debt(self):
-        elapsed, hub, _, counts = await self.feed({10: 1.5})
+    async def test_repeated_subsecond_output_stalls_preserve_media_time(self):
+        elapsed, hub, _, counts = await self.feed(
+            {frame: 0.300 for frame in range(30, 300, 30)}
+        )
         self.assertEqual(counts["frames"], 300)
+        self.assertAlmostEqual(elapsed, 10.0, places=5)
+        self.assertEqual(hub.feeder_metrics["skipped_pacing_slots"], 0)
+
+    async def test_two_second_stall_recovers_without_losing_media_time(self):
+        elapsed, hub, _, counts = await self.feed({10: 2.0})
+        self.assertEqual(counts["frames"], 300)
+        self.assertAlmostEqual(elapsed, 10.0, places=5)
+        self.assertEqual(hub.feeder_metrics["skipped_pacing_slots"], 0)
+
+    async def test_connection_time_does_not_create_startup_catchup_burst(self):
+        elapsed, hub, _, _ = await self.feed({10: 1.5}, startup=True)
         self.assertGreater(elapsed, 11.2)
         self.assertLess(elapsed, 11.7)
+        self.assertGreater(hub.feeder_metrics["skipped_pacing_slots"], 0)
+
+    async def test_first_progress_discards_connection_debt_even_after_blocked_drain(self):
+        elapsed, hub, _, _ = await self.feed({10: 2.0}, ready_after=10)
+        self.assertGreater(elapsed, 11.8)
+        self.assertLess(elapsed, 12.2)
+        self.assertEqual(hub.feeder_metrics["skipped_pacing_slots"], 0)
+
+    async def test_long_stall_discards_excessive_debt(self):
+        elapsed, hub, _, counts = await self.feed({10: 3.0})
+        self.assertEqual(counts["frames"], 300)
+        self.assertGreater(elapsed, 12.8)
+        self.assertLess(elapsed, 13.2)
         self.assertGreater(hub.feeder_metrics["skipped_pacing_slots"], 0)
 
     async def test_drain_timeout_terminates_and_closes_writer(self):

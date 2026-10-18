@@ -676,7 +676,9 @@ class Engine:
                         stderr=asyncio.subprocess.PIPE,
                     )
                     monitor = asyncio.create_task(self.watch())
-                    feeder = asyncio.create_task(self.hub.feed(self.process))
+                    feeder = asyncio.create_task(
+                        self.hub.feed(self.process, lambda: self.last_frame is not None)
+                    )
                     readers = [
                         asyncio.create_task(self.progress()),
                         asyncio.create_task(self.discard_errors()),

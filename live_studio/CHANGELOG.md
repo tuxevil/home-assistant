@@ -1,3 +1,14 @@
+# 0.8.2
+
+- Extend bounded feeder recovery to 2.5 seconds: the previous 250 ms window
+  still discarded media time during real output stalls and independent restarts.
+- Use the first encoded progress frame to distinguish startup/connection delay
+  from live output debt, avoiding repeated camera frames during startup catch-up.
+- Preserve the eight-second drain timeout and reset excessive debt after longer
+  stalls; keep the audio playlist clock and AAC settings unchanged.
+- Cover repeated 300 ms stalls, two-second recovery and bounded three-second
+  stalls in deterministic feeder regressions.
+
 # 0.8.1
 
 - Recover up to 250 ms of brief feeder scheduling/backpressure delays before
