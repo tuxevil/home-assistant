@@ -159,11 +159,12 @@ class Director:
             self.status = "manual" if self.mode == "manual" else "idle"
             return
         # Never use an old cached snapshot as evidence of a healthy source.
-        if not all(healthy.get(c, False) for c in ids):
+        available = [c for c in ids if healthy.get(c, False)]
+        if not available:
             self.reset()
             self.status = "no_video"
             return
-        usable = [c for c in ids if result[c]["usable"]]
+        usable = [c for c in available if result[c]["usable"]]
         if not usable:
             self.reset()
             self.status = "no_detail"

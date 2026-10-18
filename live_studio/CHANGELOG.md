@@ -1,3 +1,7 @@
+# 0.7.1
+
+- Continue automatic camera selection among currently healthy views when another source is offline; never select a disconnected view from an old score.
+
 # 0.7.0
 
 - Optional complete broadcast design: framed 16:9 main, named secondary views, branded header and real-reading telemetry footer.

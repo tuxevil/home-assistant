@@ -122,6 +122,30 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.submit(70, True)
 
+    def test_offline_camera_does_not_block_healthy_selection(self):
+        self.d.settings["confirmations"] = 1
+        body = self.submit(10, 99)
+        self.d.select("automatic", "wide")
+        self.d.last_switch = time.time() - 1300
+        body.update(comparison_id=uuid.uuid4().hex, selection_revision=self.d.revision)
+        self.d.comparison(body, {"wide": False, "zoom": True}, True, "sources")
+        self.assertEqual(self.d.active, "zoom")
+        self.assertEqual(self.d.status, "selected")
+
+    def test_failed_camera_never_wins_with_a_high_old_score(self):
+        body = self.submit(80, 99)
+        body.update(comparison_id=uuid.uuid4().hex, selection_revision=self.d.revision)
+        self.d.comparison(body, {"wide": True, "zoom": False}, True, "sources")
+        self.assertEqual(self.d.active, "wide")
+        self.assertEqual(self.d.status, "keep")
+
+    def test_no_healthy_cameras_preserves_current_selection(self):
+        body = self.submit(80, 99)
+        body.update(comparison_id=uuid.uuid4().hex, selection_revision=self.d.revision)
+        self.d.comparison(body, {"wide": False, "zoom": False}, True, "sources")
+        self.assertEqual(self.d.active, "wide")
+        self.assertEqual(self.d.status, "no_video")
+
     def test_source_validation_and_legacy_migration(self):
         self.assertEqual(
             validate({"rtsp_url": "rtsp://camera.invalid/old"})["sources"][0][
