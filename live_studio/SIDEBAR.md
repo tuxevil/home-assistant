@@ -63,3 +63,33 @@ PYTHONPATH and its dependencies/FFmpeg installed. Tests use generated frames and
 streams; production monitoring and energy measurements must be reported
 separately. No GPU model, private endpoint, live destination or credentials belong
 in this repository.
+
+
+## Complete broadcast presentation (0.7)
+
+Set `camera_sidebar: true` and `studio_presentation: true` per live through the
+engine config API. `broadcast_brand` (16 characters), `broadcast_location` (36)
+and `broadcast_label` (28) customize the static chrome. Defaults contain no
+installation-specific identity. Existing sidebar controls disable the whole
+composition immediately; `studio_presentation: false` restores the original rail.
+
+Canvas 1920×1080, main region x24/y130/1472×828, secondary column with four
+320×180 or two352×198 views. Every video rectangle retains16:9 without cropping.
+The worker refreshes the HUD each second and secondary pixels at the configured
+interval. Static graphics and unchanged main frames are cached independently.
+The installed FFmpeg libswscale library handles planar bilinear main scaling;
+Pillow is the optional portable fallback. No additional RTSP decoders or output
+processes are created. Pacing, the YUV contract, encoder and audio stay intact.
+
+The footer parses supported labelled values from existing HA `sensor_text`
+metadata: temperature(°C/°F), humidity(%), wind(km/h or m/s), irradiance(W/m²).
+Choose the appropriate real sensors in each live's Information options. Missing,
+unavailable or expired metadata is shown as a dash; no weather is inferred.
+The local clock uses the live timezone. The original text files and ZMQ filters
+remain, while loose legacy text is suppressed in presentation mode; CTA/ticker
+content moves into the reserved heading without covering video. Disable the
+composition to restore the original text placement.
+
+Up to four secondary views are shown, matching the existing rail limit. No chat
+voting or fake engagement commands are displayed. Full day/night visual approval
+requires captures in both actual lighting conditions, not simulated day images.

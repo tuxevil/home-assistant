@@ -20,6 +20,7 @@ class Rail:
     planes: tuple
     rendered_at: float
     render_ms: float
+    main_available: bool = True
 
 
 def _font(size):

@@ -30,6 +30,10 @@ DEFAULTS = dict(
     vaapi_device="",
     source_buffer_ms=250,
     camera_sidebar=False,
+    studio_presentation=False,
+    broadcast_brand="LIVE STUDIO",
+    broadcast_location="",
+    broadcast_label="NATURALEZA EN DIRECTO",
     sidebar_refresh_seconds=3,
     bitrate_kbps=3000,
     threads=2,
@@ -42,7 +46,15 @@ DEFAULTS = dict(
     cta_duration=12,
     overlay_layout=None,
 )
-TEXT_LIMITS = {"title": 100, "ticker": 1200, "cta": 200, "no_signal_text": 150}
+TEXT_LIMITS = {
+    "broadcast_brand": 16,
+    "broadcast_location": 36,
+    "broadcast_label": 28,
+    "title": 100,
+    "ticker": 1200,
+    "cta": 200,
+    "no_signal_text": 150,
+}
 NUMBERS = {
     "minimum_margin": (1, 30),
     "day_bonus": (0, 15),
@@ -155,7 +167,12 @@ def validate(values, base=None):
                 raise ValueError("Invalid " + key)
         elif key in TEXT_LIMITS:
             value = clean_text(value, TEXT_LIMITS[key])
-        elif key in ("show_clock", "show_camera_name", "camera_sidebar"):
+        elif key in (
+            "show_clock",
+            "show_camera_name",
+            "camera_sidebar",
+            "studio_presentation",
+        ):
             if type(value) is not bool:
                 raise ValueError("Invalid show_clock")
         elif key == "timezone":

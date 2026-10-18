@@ -1,3 +1,9 @@
+# 0.7.0
+
+- Optional complete broadcast design: framed 16:9 main, named secondary views, branded header and real-reading telemetry footer.
+- Cached planar libswscale main scaling with portable Pillow fallback; one-second HUD and independent thumbnail refresh.
+- Coherent camera transitions, discreet offline states, owned buffers and no new RTSP/FFmpeg processes.
+
 # 0.6.0
 
 - Optional per-live camera sidebar with cached YUV thumbnails, runtime bypass and feeder metrics.

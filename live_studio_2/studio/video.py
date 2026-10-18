@@ -242,6 +242,7 @@ class VideoHub:
         self.selected_frame_fps = None
         self.feed_max_block_seconds = None
         self.sidebar = None
+        self.presentation_context = {}
         self.sidebar_task = None
         self.sidebar_worker = None
         self.sidebar_rail = None
@@ -286,18 +287,34 @@ class VideoHub:
         if not self.settings.get("camera_sidebar"):
             return
         try:
-            from .sidebar import CameraSidebar
+            if self.settings.get("studio_presentation"):
+                from .presentation import StudioComposer
 
-            self.sidebar = CameraSidebar(
-                self.settings["width"], self.settings["height"]
-            )
+                self.sidebar = StudioComposer(
+                    self.settings["width"], self.settings["height"], self.settings
+                )
+            else:
+                from .sidebar import CameraSidebar
+
+                self.sidebar = CameraSidebar(
+                    self.settings["width"], self.settings["height"]
+                )
         except Exception:
             self.sidebar_error = (
                 "Camera sidebar unavailable; check dimensions and optional dependencies"
             )
 
     async def configure_sidebar(self, settings):
-        changed = self.settings.get("camera_sidebar") != settings.get("camera_sidebar")
+        changed = any(
+            self.settings.get(key) != settings.get(key)
+            for key in (
+                "camera_sidebar",
+                "studio_presentation",
+                "broadcast_brand",
+                "broadcast_location",
+                "broadcast_label",
+            )
+        )
         self.settings = settings
         if changed or (settings.get("camera_sidebar") and self.sidebar_task is None):
             await self._stop_sidebar()
@@ -334,8 +351,13 @@ class VideoHub:
                     )
                     for key, name in membership
                 ]
+                args = (
+                    (entries, active, dict(self.presentation_context))
+                    if self.settings.get("studio_presentation")
+                    else (entries, active)
+                )
                 self.sidebar_worker = asyncio.create_task(
-                    asyncio.to_thread(self.sidebar.render, entries, active)
+                    asyncio.to_thread(self.sidebar.render, *args)
                 )
                 rail = await asyncio.shield(self.sidebar_worker)
                 self.sidebar_worker = None
@@ -346,8 +368,10 @@ class VideoHub:
                 ):
                     self.sidebar_rail = rail
                     self.sidebar_updates += 1
-                refresh_at = time.monotonic() + self.settings.get(
-                    "sidebar_refresh_seconds", 3
+                refresh_at = time.monotonic() + (
+                    1
+                    if self.settings.get("studio_presentation")
+                    else self.settings.get("sidebar_refresh_seconds", 3)
                 )
                 while (
                     not self.stopping
@@ -375,7 +399,11 @@ class VideoHub:
             rail.active != self.director.active
             or rail.membership != self.sidebar_membership
         ):
-            return frame
+            return (
+                self.sidebar.transition_frame(frame)
+                if self.settings.get("studio_presentation")
+                else frame
+            )
         if time.monotonic() - rail.rendered_at > max(
             10, self.settings.get("sidebar_refresh_seconds", 3) * 2
         ):

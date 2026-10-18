@@ -31,7 +31,14 @@ OVERLAYS = {
 }
 
 
-SIDEBAR = {"camera_sidebar", "sidebar_refresh_seconds"}
+SIDEBAR = {
+    "camera_sidebar",
+    "sidebar_refresh_seconds",
+    "studio_presentation",
+    "broadcast_brand",
+    "broadcast_location",
+    "broadcast_label",
+}
 
 POLICY = {
     "minimum_margin",
@@ -317,6 +324,21 @@ class Engine:
                     )
                 ),
             )
+            if self.hub:
+                self.hub.presentation_context = {
+                    "sensor_text": values["sensor"],
+                    "timezone": s["timezone"],
+                    "cta": values["cta"]
+                    if s["overlay_layout"]["cta"]["visible"]
+                    else "",
+                    "ticker": values["ticker"]
+                    if s["overlay_layout"]["ticker"]["visible"]
+                    else "",
+                }
+            if s.get("studio_presentation") and s.get("camera_sidebar"):
+                # Keep all dynamic files and ZMQ filters, but avoid duplicate loose
+                # overlays. CTA/ticker move to the composer's reserved heading.
+                values = dict.fromkeys(values, "")
             for name, text in values.items():
                 if not s["overlay_layout"][name]["visible"]:
                     text = ""
