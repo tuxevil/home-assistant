@@ -1,7 +1,6 @@
 """Ticker clipping, dynamics, planar ownership and per-live isolation."""
 
 import unittest
-from unittest.mock import patch
 import numpy as np
 from studio.news import validate_news, VerticalNewsTicker
 from studio.presentation import StudioComposer
@@ -66,25 +65,23 @@ class NewsTests(unittest.TestCase):
         self.assertTrue(np.array_equal(before, strip.planes[0]))
 
     def test_speed_change_keeps_phase_and_raster_cache(self):
-        c = StudioComposer(1920, 1080, {"vertical_news": validate_news(NEWS)})
+        fps = 30
+        c = StudioComposer(
+            1920, 1080, {"fps": fps, "vertical_news": validate_news(NEWS)}
+        )
         r = c.render(entries(), "c0")
-        raw = frame()
-        with patch("studio.presentation.time.monotonic", return_value=10):
-            c.apply(raw, r)
-        with patch("studio.presentation.time.monotonic", return_value=12):
-            c.apply(raw, r)
-        self.assertEqual(c._news_offset, 50)
+        for _ in range(2 * fps):
+            c._news_position(r.news)
+        self.assertAlmostEqual(c._news_offset, 50)
         r2 = c.render(
             entries(),
             "c0",
             {"settings": {"vertical_news": validate_news({**NEWS, "speed_px_s": 50})}},
         )
         self.assertIs(r.news.planes, r2.news.planes)
-        with patch("studio.presentation.time.monotonic", return_value=12):
-            c.apply(raw, r2)
-        with patch("studio.presentation.time.monotonic", return_value=13):
-            c.apply(raw, r2)
-        self.assertEqual(c._news_offset, 100)
+        for _ in range(fps):
+            c._news_position(r2.news)
+        self.assertAlmostEqual(c._news_offset, 100)
 
     def test_two_and_four_secondary_layouts(self):
         c = StudioComposer(1920, 1080, {"vertical_news": validate_news(NEWS)})
