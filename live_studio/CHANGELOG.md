@@ -1,3 +1,9 @@
+# 0.8.4
+
+- Add per-live H.264 and HEVC output selection; HEVC requires a working VAAPI encoder.
+- Report the selected video codec and FFmpeg bitrate in engine status.
+- Advance vertical announcements by output-frame time so backpressure does not skip ticker content.
+
 # 0.8.3
 
 - Reduce rawvideo pipe fragmentation with bounded 1 MiB Linux pipes for persistent decoders and encoders.

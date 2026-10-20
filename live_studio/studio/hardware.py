@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 
-def probe(device, encoder=True):
+def probe(device, encoder=True, video_codec="h264"):
     try:
         command = [
             "ffmpeg",
@@ -22,7 +22,8 @@ def probe(device, encoder=True):
             "2",
         ]
         if encoder:
-            command += ["-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi"]
+            codec = {"h264": "h264_vaapi", "hevc": "hevc_vaapi"}[video_codec]
+            command += ["-vf", "format=nv12,hwupload", "-c:v", codec]
         command += ["-f", "null", "-"]
         result = subprocess.run(command, capture_output=True, timeout=10)
         return result.returncode == 0
@@ -52,14 +53,26 @@ async def select(settings):
             )
         result["fallback_reason"] = "No working VAAPI device; using CPU"
         return result
-    can_encode = encoder != "cpu" and await asyncio.to_thread(probe, device, True)
+    if encoder == "cpu":
+        can_encode = False
+    elif settings["video_codec"] == "h264":
+        can_encode = await asyncio.to_thread(probe, device, True)
+    else:
+        can_encode = await asyncio.to_thread(
+            probe, device, True, settings["video_codec"]
+        )
     if encoder == "vaapi" and not can_encode:
-        raise ValueError("Requested VAAPI H264 encoder is unavailable")
+        raise ValueError(
+            f"Requested VAAPI {settings['video_codec'].upper()} encoder is unavailable"
+        )
     result.update(
         device=device,
         encoder="vaapi" if can_encode else "cpu",
         decoder="vaapi" if decoder != "cpu" else "cpu",
     )
     if encoder == "auto" and not can_encode:
-        result["fallback_reason"] = "VAAPI H264 encoding unavailable; using CPU encoder"
+        result["fallback_reason"] = (
+            f"VAAPI {settings['video_codec'].upper()} encoding unavailable; "
+            "using CPU encoder"
+        )
     return result

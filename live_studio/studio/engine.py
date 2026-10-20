@@ -138,6 +138,7 @@ class Engine:
             state=self.state,
             mode=self.mode,
             acceleration=dict(self.acceleration),
+            video_codec=self.settings["video_codec"],
             source_configured=bool(self.settings["sources"]),
             sources_revision=self.sources_revision,
             selection=self.director.status_dict(),
@@ -188,6 +189,7 @@ class Engine:
             overlay_pending=self.layout_pending,
             overlay_error=self.layout_error,
             fps=self.metrics.get("fps"),
+            bitrate=self.metrics.get("bitrate"),
             speed=self.metrics.get("speed"),
             frames=self.metrics.get("frame"),
             output_seconds=self.last_audio,
@@ -464,8 +466,22 @@ class Engine:
             ),
         ]
         if self.acceleration["encoder"] == "vaapi":
-            cmd += ["-c:v", "h264_vaapi", "-profile:v", "high", "-bf", "0"]
+            if s["video_codec"] == "hevc":
+                cmd += [
+                    "-c:v",
+                    "hevc_vaapi",
+                    "-profile:v",
+                    "main",
+                    "-rc_mode",
+                    "CBR",
+                    "-bf",
+                    "0",
+                ]
+            else:
+                cmd += ["-c:v", "h264_vaapi", "-profile:v", "high", "-bf", "0"]
         else:
+            if s["video_codec"] != "h264":
+                raise ValueError("HEVC requires a VAAPI encoder")
             cmd += [
                 "-c:v",
                 "libx264",
@@ -635,6 +651,14 @@ class Engine:
             self.error = (
                 "Requested acceleration is unavailable; verify render device access"
             )
+            self.state = "error"
+            self.wanted = False
+            return
+        if (
+            self.settings["video_codec"] == "hevc"
+            and self.acceleration["encoder"] != "vaapi"
+        ):
+            self.error = "HEVC requires an available VAAPI video encoder"
             self.state = "error"
             self.wanted = False
             return

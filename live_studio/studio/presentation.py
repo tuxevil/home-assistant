@@ -229,9 +229,7 @@ class StudioComposer:
         self._cache = None
         self._cache_at = 0
         self._footer_key = self._footer = None
-        self._news_at = None
         self._news_offset = 0.0
-        self._news_speed = 0.0
         self._main_label = None
 
     def _cards(self, count):
@@ -463,15 +461,23 @@ class StudioComposer:
             else original
         )
 
+    def _news_position(self, news):
+        """Advance the ticker by output media time, one rawvideo frame at a time.
+
+        Wall-clock scrolling would jump forward when FFmpeg applies backpressure,
+        even though rawvideo timestamps resume at the configured frame rate.
+        """
+        if news is None:
+            return None
+        fps = float(self.settings.get("fps", 30) or 30)
+        self._news_offset += news.speed / fps
+        return int(self._news_offset + 1e-9) % news.height
+
     def apply(self, frame, rail):
         if rail is None:
             return frame
         now = time.monotonic()
-        if self._news_at is not None:
-            self._news_offset += max(0, now - self._news_at) * self._news_speed
-        self._news_at = now
-        self._news_speed = rail.news.speed if rail.news else 0
-        offset = int(self._news_offset) % rail.news.height if rail.news else None
+        offset = self._news_position(rail.news)
         if (
             self._cache
             and self._cache[0] is frame

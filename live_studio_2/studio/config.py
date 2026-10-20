@@ -34,6 +34,7 @@ DEFAULTS = dict(
     fps=15,
     video_encoder="cpu",
     video_decoder="cpu",
+    video_codec="h264",
     vaapi_device="",
     source_buffer_ms=250,
     camera_sidebar=False,
@@ -183,6 +184,9 @@ def validate(values, base=None):
         elif key in ("video_encoder", "video_decoder"):
             if value not in ("cpu", "vaapi", "auto"):
                 raise ValueError("Invalid video acceleration")
+        elif key == "video_codec":
+            if value not in ("h264", "hevc"):
+                raise ValueError("Invalid video codec")
         elif key == "vaapi_device":
             if not isinstance(value, str) or (
                 value
@@ -261,6 +265,8 @@ def validate(values, base=None):
                 )
             ]
     result["sources"] = validate_sources(result["sources"])
+    if result["video_codec"] == "hevc" and result["video_encoder"] == "cpu":
+        raise ValueError("HEVC requires a VAAPI-capable video encoder")
     result["rtsp_url"] = result["sources"][0]["rtsp_url"] if result["sources"] else ""
     ids = [x["id"] for x in result["sources"]]
     for period in ("morning", "evening"):
