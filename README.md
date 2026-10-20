@@ -14,6 +14,12 @@ que HACS pueda gestionar sus versiones.
 | Live Studio Engine 2 | [`live_studio_2/`](live_studio_2/) | Segunda salida independiente y opcional en HAOS |
 | Live Studio | [tuxevil/ha-live-studio](https://github.com/tuxevil/ha-live-studio) | Integración HACS mediante repositorio personalizado |
 
+## Integraciones de Home Assistant
+
+| Proyecto | Repositorio | Instalación |
+| --- | --- | --- |
+| PACEEX Smart BMS | [tuxevil/ha_paceex_smart_bms](https://github.com/tuxevil/ha_paceex_smart_bms) | HACS como repositorio personalizado; integración local de solo lectura para BMS PACEEX/PeiCheng por Wi-Fi |
+
 ## Instalar el motor en HAOS
 
 Añadir `https://github.com/tuxevil/home-assistant`
